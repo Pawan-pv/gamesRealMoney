@@ -1,0 +1,1487 @@
+c:\Game\app\(auth)\callback.tsx
+// app/auth/callback.tsx
+import { useEffect } from 'react';
+import { useRouter } from 'expo-router';
+
+export default function CallbackScreen() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // Handle the redirect (optional validation)
+    router.replace('/(tabs)');
+  }, []);
+
+  return null; // This screen doesn't render UI
+}
+---
+c:\Game\app\(auth)\login.tsx
+import { View, Text, Button, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import { loginWithGoogle } from '../lib/appwrite';
+import * as WebBrowser from 'expo-web-browser';
+
+export default function LoginScreen() {
+  const router = useRouter();
+
+  const handleLogin = async () => {
+    try {
+      const result = await loginWithGoogle();
+      switch (result.type) {
+        case 'success':
+          router.push('/(tabs)');
+          break;
+        case 'cancel':
+          Alert.alert('Login Cancelled', 'You cancelled the Google login process.');
+          break;
+        case 'dismiss':
+          Alert.alert('Login Dismissed', 'The browser window was closed. Please try again.');
+          break;
+        default:
+          Alert.alert('Login Error', 'An unexpected error occurred. Please try again later.');
+      }
+    } catch (error) {
+      console.error('Login Error:', error);
+      Alert.alert('Login Failed', 'An error occurred during login. Please check your connection and try again.');
+    }
+  };
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text style={{ marginBottom: 10, fontSize: 16 }}>
+        Already have an account? Click below to log in with Google.
+      </Text>
+      <Button title="Login with Google" onPress={handleLogin} />
+    </View>
+  );
+}
+---
+c:\Game\app\(auth)\register.tsx
+import { useRouter } from 'expo-router';
+import { Alert, Button, Text, View } from 'react-native';
+import { loginWithGoogle } from '../lib/appwrite';
+
+export default function RegisterScreen() {
+  const router = useRouter();
+
+  const handleRegister = async () => {
+    try {
+      const result = await loginWithGoogle();
+      switch (result.type) {
+        case 'success':
+          router.push('/(tabs)');
+          break;
+        case 'cancel':
+          Alert.alert('Registration Cancelled', 'You cancelled the Google registration process.');
+          break;
+        case 'dismiss':
+          Alert.alert('Registration Dismissed', 'The browser window was closed. Please try again.');
+          break;
+        default:
+          Alert.alert('Registration Error', 'An unexpected error occurred. Please try again later.');
+      }
+    } catch (error) {
+      console.error('Register Error:', error);
+      Alert.alert('Registration Failed', 'An error occurred during registration. Please check your connection and try again.');
+    }
+  };
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text style={{ marginBottom: 10, fontSize: 16 }}>
+        Don't have an account? Click below to register with Google.
+      </Text>
+      <Button title="Register with Google" onPress={handleRegister} />
+    </View>
+  );
+}
+---
+c:\Game\app\(game)\create.tsx
+// app/(game)/create.tsx
+import { View, Text, Button, TextInput } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { databases } from '../lib/appwrite';
+import { getCurrentUser } from '../lib/appwrite';
+import { ENTRY_FEES } from '../constants/fees';
+import { User } from '../lib/types';
+
+export default function CreateRoomScreen() {
+  const [entryFee, setEntryFee] = useState<keyof typeof ENTRY_FEES>('beginner');
+  const [gameType, setGameType] = useState<'classic' | 'quick' | 'tournament'>('classic');
+  const router = useRouter();
+
+  const createRoom = async () => {
+    try {
+      const user = await getCurrentUser();
+      const room = await databases.createDocument(
+        process.env.APPWRITE_DATABASE_ID!,
+        process.env.APPWRITE_ROOMS_COLLECTION!,
+        'unique()',
+        {
+          roomCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+          entryFee: ENTRY_FEES[entryFee],
+          maxPlayers: 4,
+          currentPlayers: 1,
+          gameType,
+          status: 'waiting',
+          prizePool: 0,
+          commission: 0,
+          players: [
+            {
+              userId: user.$id,
+              playerNumber: 1,
+              joinedAt: new Date().toISOString(),
+              isReady: false,
+              isBot: false,
+            },
+          ],
+          gameSettings: {
+            timeLimit: 600,
+            autoPlay: false,
+            botsEnabled: true,
+          },
+          createdBy: user.$id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      );
+
+      await databases.createDocument(
+        process.env.APPWRITE_DATABASE_ID!,
+        process.env.APPWRITE_GAME_STATES_COLLECTION!,
+        'unique()',
+        {
+          roomId: room.$id,
+          currentPlayer: 1,
+          diceValue: 0,
+          gameBoard: {
+            player1: { tokens: Array(4).fill({ position: 0, isHome: true, isSafe: false, color: 'red' }) },
+            player2: { tokens: Array(4).fill({ position: 0, isHome: true, isSafe: false, color: 'green' }) },
+            player3: { tokens: Array(4).fill({ position: 0, isHome: true, isSafe: false, color: 'yellow' }) },
+            player4: { tokens: Array(4).fill({ position: 0, isHome: true, isSafe: false, color: 'blue' }) },
+          },
+          gameHistory: [],
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      );
+
+      router.push(`/game/room/${room.$id}`);
+    } catch (error) {
+      console.error('Create Room Error:', error);
+    }
+  };
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Create Game Room</Text>
+      <TextInput
+        value={entryFee}
+        onChangeText={(text) => setEntryFee(text as keyof typeof ENTRY_FEES)}
+        placeholder="Select Entry Fee (beginner, amateur, pro, expert, master)"
+      />
+      <TextInput
+        value={gameType}
+        onChangeText={(text) => setGameType(text as 'classic' | 'quick' | 'tournament')}
+        placeholder="Game Type (classic, quick, tournament)"
+      />
+      <Button title="Create Room" onPress={createRoom} />
+    </View>
+  );
+}
+---
+c:\Game\app\(game)\play\[id].tsx
+// app/(game)/play/[id].tsx
+import { useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useGameState } from '../../hooks/useGameState';
+import { getCurrentUser } from '../../lib/appwrite';
+import { GameState, User } from '../../lib/types';
+
+const styles = StyleSheet.create({
+  container: { flex: 1, alignItems: 'center', backgroundColor: '#6B2D26' },
+  board: { width: 300, height: 300, position: 'relative' },
+  quadrant: { position: 'absolute', width: '50%', height: '50%' },
+  redQuadrant: { top: 0, left: 0, backgroundColor: 'red' },
+  greenQuadrant: { top: 0, right: 0, backgroundColor: 'green' },
+  yellowQuadrant: { bottom: 0, right: 0, backgroundColor: 'yellow' },
+  blueQuadrant: { bottom: 0, left: 0, backgroundColor: 'blue' },
+  token: { position: 'absolute', width: 20, height: 20 },
+  dice: { width: 50, height: 50, margin: 10 },
+  moveButton: { backgroundColor: 'red', padding: 10, borderRadius: 5, marginTop: 10 },
+  moveText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+});
+
+const getPlayerColor = (playerNumber: number): string => {
+  const colors: Record<number, string> = {
+    1: 'red',
+    2: 'green',
+    3: 'yellow',
+    4: 'blue',
+  };
+  return colors[playerNumber] || 'gray';
+};
+
+const getTokenPositionStyle = (position: number): { top: number; left: number } => {
+  const gridSize = 300 / 15;
+  const row = Math.floor(position / 15);
+  const col = position % 15;
+  return { top: row * gridSize, left: col * gridSize };
+};
+
+export default function PlayScreen() {
+  const { id: roomId } = useLocalSearchParams();
+  const { gameState, rollDice, moveToken, isLoading } = useGameState(roomId as string);
+  const [user, setUser] = useState<User | null>(null);
+  const [selectedToken, setSelectedToken] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const currentUser = await getCurrentUser();
+      setUser(currentUser);
+    };
+    fetchUser();
+  }, []);
+
+  const handleMove = (tokenIndex: number) => {
+    if (gameState && gameState.diceValue && selectedToken === null) {
+      const playerKey = `player${gameState.currentPlayer}` as keyof GameState['gameBoard'];
+      const token = gameState.gameBoard[playerKey].tokens[tokenIndex];
+      const newPosition = token.position + gameState.diceValue;
+      moveToken(tokenIndex, newPosition);
+      setSelectedToken(null);
+    }
+  };
+
+  if (isLoading || !gameState) return <Text>Loading...</Text>;
+
+  return (
+    <View style={styles.container}>
+      <TouchableOpacity
+        style={styles.moveButton}
+        onPress={rollDice}
+        disabled={!gameState.currentPlayer || !gameState.diceValue}
+      >
+        <Text style={styles.moveText}>ROLL DICE ({gameState.diceValue || 1})</Text>
+      </TouchableOpacity>
+      <View style={styles.board}>
+        <View style={[styles.quadrant, styles.redQuadrant]} />
+        <View style={[styles.quadrant, styles.greenQuadrant]} />
+        <View style={[styles.quadrant, styles.yellowQuadrant]} />
+        <View style={[styles.quadrant, styles.blueQuadrant]} />
+        <View
+          style={{
+            position: 'absolute',
+            top: '25%',
+            left: '25%',
+            width: '50%',
+            height: '50%',
+            backgroundColor: 'white',
+          }}
+        />
+        {Object.entries(gameState.gameBoard).map(([playerKey, player]) =>
+          player.tokens.map((token, index) => {
+            // Make each token clickable
+            const color = (token as any).color || getPlayerColor(Number(playerKey.replace('player', '')));
+            return (
+              <TouchableOpacity
+                key={`${playerKey}-${index}`}
+                // onPress is on TouchableOpacity, not Image!
+                onPress={() => handleMove(index)}
+                style={[styles.token, getTokenPositionStyle(token.position), { zIndex: 1 }]}
+              >
+                <Image
+                  source={
+                    // Use require for local images
+                    color === 'red'
+                      ? require('../../assets/images/token_red.png')
+                      : color === 'green'
+                      ? require('../../assets/images/token_green.png')
+                      : color === 'yellow'
+                      ? require('../../assets/images/token_yellow.png')
+                      : color === 'blue'
+                      ? require('../../assets/images/token_blue.png')
+                      : require('../../assets/images/token_gray.png')
+                  }
+                  style={{ width: 20, height: 20 }}
+                  // No onPress on Image
+                />
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </View>
+      <Image source={require('../../assets/images/dice.png')} style={styles.dice} />
+    </View>
+  );
+}
+
+---
+c:\Game\app\(game)\room\[id].tsx
+// app/(game)/room/[id].tsx
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Alert, Button, Text, View } from 'react-native';
+import { useSocketIO } from '../../hooks/useSocketIo';
+import { databases, getCurrentUser } from '../../lib/appwrite';
+import { GameRoom, User } from '../../lib/types';
+
+const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID!;
+const APPWRITE_ROOMS_COLLECTION = process.env.APPWRITE_ROOMS_COLLECTION!;
+
+export default function GameRoomScreen() {
+  const { id: roomId } = useLocalSearchParams();
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [room, setRoom] = useState<GameRoom | null>(null);
+  const { socket, connect } = useSocketIO();
+
+  // 1. Fetch user once
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (mounted) setUser(currentUser);
+      } catch (err) {
+        Alert.alert('Error', 'Failed to fetch user');
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // 2. Fetch room whenever roomId changes
+  useEffect(() => {
+    if (!roomId) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const roomDoc = await databases.getDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_ROOMS_COLLECTION,
+          roomId as string
+        );
+        if (mounted) setRoom((roomDoc.documents as unknown) as GameRoom);
+      } catch (err) {
+        Alert.alert('Error', 'Failed to fetch room');
+      }
+    })();
+    return () => { mounted = false; };
+  }, [roomId]);
+
+  // 3. Kick off socket connect when both user and socket are ready
+  useEffect(() => {
+    if (roomId && user && socket) {
+      connect(roomId as string, user.$id);
+    }
+  }, [roomId, user, socket]);
+
+  const joinRoom = async () => {
+    if (user && room && !room.players.find((p) => p.userId === user.$id)) {
+      const newPlayers = [
+        ...room.players,
+        {
+          userId: user.$id,
+          playerNumber: room.currentPlayers + 1,
+          joinedAt: new Date().toISOString(),
+          isReady: false,
+          isBot: false,
+        },
+      ];
+      try {
+        await databases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_ROOMS_COLLECTION,
+          roomId as string,
+          {
+            currentPlayers: room.currentPlayers + 1,
+            players: newPlayers,
+          }
+        );
+        setRoom({
+          ...room,
+          currentPlayers: room.currentPlayers + 1,
+          players: newPlayers,
+        });
+        if (socket) socket.emit('joinRoom', roomId, user.$id);
+      } catch (err) {
+        Alert.alert('Error', 'Failed to join room');
+      }
+    }
+  };
+
+  // Handler to start the game or redirect to play page
+  const handlePlay = () => {
+    if (roomId) {
+      router.push(`/play/${roomId}`);
+    }
+  };
+
+  // Loading states
+  if (!room) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Loading room...</Text>
+      </View>
+    );
+  }
+
+  // Determine if the current user is in this room
+  const hasJoined = !!room.players.find((p) => p.userId === user?.$id);
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text style={{ fontWeight: 'bold', fontSize: 24, marginBottom: 8 }}>Room: {room.roomCode}</Text>
+      <Text>Entry Fee: ₹{room.entryFee}</Text>
+      <Text>Players: {room.currentPlayers}/{room.maxPlayers}</Text>
+      <Text>Status: {room.status}</Text>
+      <View style={{ height: 16 }} />
+      {!hasJoined && (
+        <Button title="Join Room" onPress={joinRoom} />
+      )}
+      {hasJoined && (
+        <Button title="Play" onPress={handlePlay} />
+      )}
+      <View style={{ marginTop: 32, alignItems: 'center' }}>
+        <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Players:</Text>
+        {room.players.map((p, idx) => (
+          <Text key={p.userId} style={{ color: p.isBot ? 'grey' : 'black' }}>
+            {idx + 1}. {p.userId} {p.isBot ? '(bot)' : ''} {p.isReady ? '✅' : ''}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+---
+c:\Game\app\(payment)\deposit.tsx
+// app/(payment)/deposit.tsx
+import { View, Text, Button, TextInput } from 'react-native';
+import { useState } from 'react';
+import { PaymentService } from '../services/payment';
+import { getCurrentUser } from '../lib/appwrite';
+import { useRouter } from 'expo-router';
+
+export default function DepositScreen() {
+  const [amount, setAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  const handleDeposit = async () => {
+    setLoading(true);
+    try {
+      const user = await getCurrentUser();
+      await PaymentService.processPayment(user.$id, parseFloat(amount));
+      alert('Deposit successful!');
+      router.push('/(tabs)/wallet');
+    } catch (error: any) {
+      alert('Deposit failed: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Deposit Money</Text>
+      <TextInput
+        value={amount}
+        onChangeText={setAmount}
+        placeholder="Enter amount (INR)"
+        keyboardType="numeric"
+      />
+      <Button title="Deposit" onPress={handleDeposit} disabled={loading} />
+    </View>
+  );
+}
+---
+c:\Game\app\(payment)\history.tsx
+// app/(payment)/history.tsx
+import { View, Text, FlatList } from 'react-native';
+import { useState, useEffect } from 'react';
+import { databases } from '../lib/appwrite';
+import { Transaction } from '../lib/types';
+import { getCurrentUser } from '../lib/appwrite';
+import { Query } from 'react-native-appwrite';
+
+
+export default function HistoryScreen() {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [userId, setUser] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser.$id);
+        const response = await databases.listDocuments(
+          process.env.APPWRITE_DATABASE_ID!,
+          process.env.APPWRITE_TRANSACTIONS_COLLECTION!,
+          [Query.equal('userId', currentUser.$id)]
+        );
+        setTransactions((response.documents as unknown) as Transaction[]);
+      } catch (error) {
+        console.error('Fetch Transactions Error:', error);
+      }
+    };
+    fetchData();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, padding: 10 }}>
+      <Text>Transaction History</Text>
+      <FlatList
+        data={transactions}
+        keyExtractor={(item) => item.$id}
+        renderItem={({ item }) => (
+          <View style={{ padding: 10, borderBottomWidth: 1 }}>
+            <Text>Type: {item.type}</Text>
+            <Text>Amount: ₹{item.amount}</Text>
+            <Text>Status: {item.status}</Text>
+            <Text>Date: {new Date(item.createdAt).toLocaleDateString()}</Text>
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+---
+c:\Game\app\(payment)\withdraw.tsx
+// app/(payment)/withdraw.tsx
+import { View, Text } from 'react-native';
+import { useRouter } from 'expo-router';
+
+export default function WithdrawScreen() {
+  const router = useRouter();
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Withdraw (TBD)</Text>
+      <Text onPress={() => router.push('/(tabs)/wallet')}>Back to Wallet</Text>
+    </View>
+  );
+}
+---
+c:\Game\app\(tabs)\games.tsx
+
+---
+c:\Game\app\(tabs)\index.tsx
+// app/(tabs)/index.tsx
+import { View, Text, Button } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useState, useEffect } from 'react';
+import { getCurrentUser } from '../lib/appwrite';
+import { User } from '../lib/types';
+
+export default function HomeScreen() {
+  const [user, setUser] = useState<User | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch (error) {
+        router.push('/(auth)/login');
+      }
+    };
+    fetchUser();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Welcome, {user?.name || 'Guest'}!</Text>
+      <Text>Wallet Balance: ₹{user?.wallet.balance || 0}</Text>
+      <Button title="Create Game" onPress={() => router.push('/(game)/create')} />
+      <Button title="Join Game" onPress={() => router.push('/(tabs)/games')} />
+    </View>
+  );
+}
+---
+c:\Game\app\(tabs)\leaderboard.tsx
+// app/(tabs)/leaderboard.tsx
+import { useEffect, useState } from 'react';
+import { FlatList, Text, View } from 'react-native';
+import { databases } from '../lib/appwrite';
+import { LeaderboardEntry } from '../lib/types';
+import { Query } from 'react-native-appwrite';
+
+
+export default function LeaderboardScreen() {
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        const response = await databases.listDocuments(
+          process.env.APPWRITE_DATABASE_ID!,
+          process.env.APPWRITE_LEADERBOARD_COLLECTION!,
+          [Query.orderDesc('totalWinnings')]
+        );
+        setLeaderboard((response.documents as unknown) as LeaderboardEntry[]);
+      } catch (error) {
+        console.error('Fetch Leaderboard Error:', error);
+      }
+    };
+    fetchLeaderboard();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, padding: 10 }}>
+      <Text>Leaderboard (Weekly)</Text>
+      <FlatList
+        data={leaderboard}
+        keyExtractor={(item) => item.$id}
+        renderItem={({ item, index }) => (
+          <View style={{ padding: 10, borderBottomWidth: 1 }}>
+            <Text>{index + 1}. {item.username} - ₹{item.totalWinnings}</Text>
+            <Text>Win Rate: {item.winRate}%</Text>
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+---
+c:\Game\app\(tabs)\profile.tsx
+// app/(tabs)/profile.tsx
+import { View, Text } from 'react-native';
+import { useState, useEffect } from 'react';
+import { getCurrentUser } from '../lib/appwrite';
+import { User } from '../lib/types';
+
+export default function ProfileScreen() {
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch (error) {
+        console.error('Fetch User Error:', error);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Profile</Text>
+      <Text>Name: {user?.name || 'N/A'}</Text>
+      <Text>Email: {user?.email || 'N/A'}</Text>
+      <Text>Games Played: {user?.stats.gamesPlayed || 0}</Text>
+    </View>
+  );
+}
+---
+c:\Game\app\(tabs)\wallet.tsx
+// app/(tabs)/games.tsx
+import { View, Text, FlatList, Button } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useState, useEffect } from 'react';
+import { databases } from '../lib/appwrite';
+import { GameRoom } from '../lib/types';
+import { Query } from 'react-native-appwrite';
+
+
+export default function GamesScreen() {
+  const [rooms, setRooms] = useState<GameRoom[]>([]);
+  const router = useRouter();
+
+  useEffect(() => {
+    const fetchRooms = async () => {
+      try {
+        const response = await databases.listDocuments(
+          process.env.APPWRITE_DATABASE_ID!,
+          process.env.APPWRITE_ROOMS_COLLECTION!,
+          [Query.equal('status', 'waiting')]
+        );
+        setRooms((response.documents as unknown) as GameRoom[]);
+      } catch (error) {
+        console.error('Fetch Rooms Error:', error);
+      }
+    };
+    fetchRooms();
+  }, []);
+
+  const joinRoom = (roomId: string) => {
+    router.push(`/game/room/${roomId}`);
+  };
+
+  return (
+    <View style={{ flex: 1, padding: 10 }}>
+      <Text>Available Games</Text>
+      <FlatList
+        data={rooms}
+        keyExtractor={(item) => item.$id}
+        renderItem={({ item }) => (
+          <View style={{ padding: 10, borderBottomWidth: 1 }}>
+            <Text>Room: {item.roomCode}</Text>
+            <Text>Entry Fee: ₹{item.entryFee}</Text>
+            <Text>Players: {item.currentPlayers}/{item.maxPlayers}</Text>
+            <Button title="Join" onPress={() => joinRoom(item.$id)} />
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+---
+c:\Game\app\+not-found.tsx
+// app/+not-found.tsx
+import { View, Text } from 'react-native';
+import { useRouter } from 'expo-router';
+
+export default function NotFoundScreen() {
+  const router = useRouter();
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Page Not Found</Text>
+      <Text onPress={() => router.push('/(tabs)')}>Go Home</Text>
+    </View>
+  );
+}
+---
+c:\Game\app\constants\fees.ts
+export const ENTRY_FEES = {
+  beginner: 5,
+  amateur: 10,
+  pro: 25,
+  expert: 50,
+  master: 100,
+} as const;
+
+export const COMMISSION_RATE = 0.05; // 5% platform commission
+
+export const calculatePrizePool = (
+  entryFee: number,
+  playerCount: number
+): {
+  totalPool: number;
+  commission: number;
+  prizePool: number;
+  winnerAmount: number;
+  runnerUpAmount: number;
+} => {
+  const totalPool = entryFee * playerCount;
+  const commission = totalPool * COMMISSION_RATE;
+  const prizePool = totalPool - commission;
+
+  return {
+    totalPool,
+    commission,
+    prizePool,
+    winnerAmount: prizePool * 0.8,
+    runnerUpAmount: prizePool * 0.2,
+  };
+};
+---
+c:\Game\app\hooks\useGameState.ts
+// hooks/useGameState.ts
+import { useState, useEffect } from 'react';
+import { databases } from '../lib/appwrite';
+import { useSocketIO } from './useSocketIo';
+import { GameState } from '../lib/types';
+
+interface GameStateHook {
+  gameState: GameState | null;
+  isLoading: boolean;
+  rollDice: () => Promise<void>;
+  moveToken: (tokenIndex: number, newPosition: number) => Promise<void>;
+}
+
+export const useGameState = (roomId: string): GameStateHook => {
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const { socket } = useSocketIO();
+
+  useEffect(() => {
+    if (socket) {
+      socket.emit('joinRoom', roomId);
+      socket.on('updateGameState', (state: GameState) => {
+        setGameState(state);
+        setIsLoading(false);
+      });
+    }
+
+    return () => {
+      if (socket) socket.off('updateGameState');
+    };
+  }, [socket, roomId]);
+
+  const rollDice = async () => {
+    try {
+      const diceValue = Math.floor(Math.random() * 6) + 1;
+      if (socket) {
+        socket.emit('rollDice', roomId, diceValue);
+      }
+      await databases.updateDocument(
+        process.env.APPWRITE_DATABASE_ID!,
+        process.env.APPWRITE_GAME_STATES_COLLECTION!,
+        roomId,
+        {
+          diceValue,
+          currentPlayer: getNextPlayer(gameState?.currentPlayer),
+          gameHistory: [
+            ...(gameState?.gameHistory || []),
+            {
+              player: gameState?.currentPlayer || 1,
+              action: 'roll',
+              dice: diceValue,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }
+      );
+    } catch (error) {
+      console.error('Roll Dice Error:', error);
+      throw error;
+    }
+  };
+
+  const moveToken = async (tokenIndex: number, newPosition: number) => {
+    try {
+      if (!gameState || !socket) return;
+
+      const playerKey = `player${gameState.currentPlayer}` as keyof GameState['gameBoard'];
+      const updatedBoard = { ...gameState.gameBoard };
+      const token = updatedBoard[playerKey].tokens[tokenIndex];
+
+      if (!isValidMove(token, newPosition, gameState, gameState.diceValue)) {
+        throw new Error('Invalid move');
+      }
+
+      updatedBoard[playerKey].tokens[tokenIndex] = {
+        ...token,
+        position: newPosition,
+        isHome: newPosition === 0,
+        isSafe: isSafePosition(newPosition),
+      };
+
+      const capture = checkCapture(newPosition, gameState);
+      if (capture) {
+        const opponentKey = `player${capture.player}` as keyof GameState['gameBoard'];
+        updatedBoard[opponentKey].tokens[capture.tokenIndex] = {
+          position: 0,
+          isHome: true,
+          isSafe: false,
+          color: updatedBoard[opponentKey].tokens[capture.tokenIndex].color,
+        };
+      }
+
+      await databases.updateDocument(
+        process.env.APPWRITE_DATABASE_ID!,
+        process.env.APPWRITE_GAME_STATES_COLLECTION!,
+        roomId,
+        {
+          gameBoard: updatedBoard,
+          gameHistory: [
+            ...gameState.gameHistory,
+            {
+              player: gameState.currentPlayer,
+              action: 'move',
+              tokenIndex,
+              from: token.position,
+              to: newPosition,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }
+      );
+
+      if (checkWin(updatedBoard[playerKey].tokens)) {
+        await databases.updateDocument(
+          process.env.APPWRITE_DATABASE_ID!,
+          process.env.APPWRITE_ROOMS_COLLECTION!,
+          roomId,
+          { status: 'completed', winner: gameState.players.find((p) => p.playerNumber === gameState.currentPlayer)?.userId }
+        );
+      }
+
+      socket.emit('moveToken', roomId, { tokenIndex, newPosition });
+    } catch (error) {
+      console.error('Move Token Error:', error);
+      throw error;
+    }
+  };
+
+  return { gameState, rollDice, moveToken, isLoading };
+};
+
+// Helper functions
+const getNextPlayer = (currentPlayer?: number): number => {
+  return currentPlayer ? (currentPlayer % 4) + 1 : 1;
+};
+
+const isValidMove = (token: GameState['gameBoard']['player1']['tokens'][0], newPosition: number, gameState: GameState, diceValue: number): boolean => {
+  if (token.isHome && diceValue !== 6) return false;
+  const currentPosition = token.position;
+  const moveDistance = newPosition - currentPosition;
+  return moveDistance === diceValue && newPosition >= 0 && newPosition <= 56;
+};
+
+const isSafePosition = (position: number): boolean => {
+  const safePositions = [0, 1, 9, 14, 22, 27, 35, 40, 48];
+  return safePositions.includes(position);
+};
+
+const checkCapture = (newPosition: number, gameState: GameState): { player: number; tokenIndex: number } | null => {
+  const players = [1, 2, 3, 4].filter((p) => p !== gameState.currentPlayer);
+  for (const player of players) {
+    const playerKey = `player${player}` as keyof GameState['gameBoard'];
+    const tokens = gameState.gameBoard[playerKey].tokens;
+    const captured = tokens.findIndex((t) => t.position === newPosition && !t.isSafe);
+    if (captured !== -1) return { player, tokenIndex: captured };
+  }
+  return null;
+};
+
+const checkWin = (tokens: GameState['gameBoard']['player1']['tokens']): boolean => {
+  return tokens.every((t) => t.position === 56);
+};
+---
+c:\Game\app\hooks\useRealTimeGame.ts
+
+---
+c:\Game\app\hooks\useSocketIo.ts
+// hooks/useSocketIO.ts
+import { useState, useEffect } from 'react';
+import io, { Socket } from 'socket.io-client';
+import { GameState } from '../lib/types';
+
+interface SocketHook {
+  socket: Socket | null;
+  connect: (roomId: string, userId: string) => void;
+}
+
+export const useSocketIO = (): SocketHook => {
+  const [socket, setSocket] = useState<Socket | null>(null);
+
+  useEffect(() => {
+    const newSocket = io(process.env.SOCKET_IO_SERVER!, {
+      transports: ['websocket'],
+      query: { token: 'user-auth-token' }, // Replace with actual auth token
+    });
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, []);
+
+  const connect = (roomId: string, userId: string) => {
+    if (socket) {
+      socket.emit('joinRoom', roomId, userId);
+      socket.on('playerJoined', (data: { userId: string; playerNumber: number }) => {
+        console.log('Player joined:', data);
+      });
+      socket.on('diceRolled', (data: { roomId: string; diceValue: number }) => {
+        console.log('Dice rolled:', data);
+      });
+      socket.on('tokenMoved', (data: { roomId: string; tokenIndex: number; newPosition: number }) => {
+        console.log('Token moved:', data);
+      });
+    }
+  };
+
+  return { socket, connect };
+};
+---
+c:\Game\app\lib\appwrite.ts
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import { Account, Client, Databases } from 'react-native-appwrite';
+
+const client = new Client()
+  .setEndpoint('YOUR_APPWRITE_ENDPOINT')
+  .setProject('YOUR_APPWRITE_PROJECT_ID');
+
+export const account = new Account(client);
+export const databases = new Databases(client);
+
+export const loginWithGoogle = async (): Promise<{ type: string; url?: string }> => {
+  try {
+    const redirectUrl = Linking.createURL('/auth/callback');
+    const authUrl = client.config.endpoint +
+      '/v1/account/sessions/oauth2/google' +
+      `?project=${client.config.project}` +
+      `&success=${encodeURIComponent(redirectUrl)}` +
+      `&failure=${encodeURIComponent(redirectUrl)}`;
+
+    const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl, {
+      showInRecents: true,
+    });
+
+    // There is not always a need to call handleRedirect for Appwrite.
+    if (result.type === 'success') {
+      return { type: 'success' };
+    } else if (result.type === 'cancel') {
+      return { type: 'cancel' };
+    } else if (result.type === 'dismiss') {
+      return { type: 'dismiss' };
+    }
+    return { type: 'unknown' };
+  } catch (error) {
+    console.error('Google Auth Error:', error);
+    throw error;
+  }
+};
+
+export const getCurrentUser = async (): Promise<any> => {
+  try {
+    const user = await account.get();
+    // Adjust the following based on your schema:
+    const userDoc = await databases.getDocument(
+      'YOUR_DATABASE_ID',
+      'YOUR_USERS_COLLECTION',
+      user.$id
+    );
+    return userDoc;
+  } catch (error) {
+    console.error('Get User Error:', error);
+    throw error;
+  }
+};
+
+---
+c:\Game\app\lib\types.ts
+// lib/types.ts
+export interface User {
+  $id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  googleId: string;
+  avatar?: string;
+  wallet: {
+    balance: number;
+    totalDeposits: number;
+    totalWithdrawals: number;
+    totalWinnings: number;
+  };
+  stats: {
+    gamesPlayed: number;
+    gamesWon: number;
+    winRate: number;
+    totalEarnings: number;
+  };
+  kyc: {
+    status: 'pending' | 'verified' | 'rejected';
+    documents: string[];
+  };
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GameRoom {
+  $id: string;
+  roomCode: string;
+  entryFee: number;
+  maxPlayers: number;
+  currentPlayers: number;
+  gameType: 'classic' | 'quick' | 'tournament';
+  status: 'waiting' | 'playing' | 'completed' | 'cancelled';
+  prizePool: number;
+  commission: number;
+  winner?: string;
+  players: Array<{
+    userId: string;
+    playerNumber: number;
+    joinedAt: string;
+    isReady: boolean;
+    isBot: boolean;
+  }>;
+  gameSettings: {
+    timeLimit: number;
+    autoPlay: boolean;
+    botsEnabled: boolean;
+  };
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+
+export type Token = {
+  position: number;
+  isHome: boolean;
+  isSafe: boolean;
+  color: 'red' | 'green' | 'yellow' | 'blue';
+};
+
+export interface GameState {
+  $id: string;
+  roomId: string;
+  currentPlayer: number; // 1=Red, 2=Green, 3=Yellow, 4=Blue
+  diceValue: number;
+  gameBoard: {
+    player1: { tokens: Array<{ position: number; isHome: boolean; isSafe: boolean; color: 'red' }> };
+    player2: { tokens: Array<{ position: number; isHome: boolean; isSafe: boolean; color: 'green' }> };
+    player3: { tokens: Array<{ position: number; isHome: boolean; isSafe: boolean; color: 'yellow' }> };
+    player4: { tokens: Array<{ position: number; isHome: boolean; isSafe: boolean; color: 'blue' }> };
+  };
+  gameHistory: Array<{
+    player: number;
+    action: 'move' | 'roll' | 'capture';
+    dice?: number;
+    tokenIndex?: number;
+    from?: number;
+    to?: number;
+    timestamp: string;
+  }>;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export interface Transaction {
+  $id: string;
+  userId: string;
+  type: 'deposit' | 'withdrawal' | 'game_entry' | 'game_winning' | 'commission';
+  amount: number;
+  currency: 'INR' | 'USD';
+  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  paymentMethod: 'stripe' | 'other';
+  stripePaymentId?: string;
+  gameRoomId?: string;
+  description: string;
+  metadata?: {
+    stripeCustomerId?: string;
+    paymentMethodId?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LeaderboardEntry {
+  $id: string;
+  userId: string;
+  username: string;
+  avatar?: string;
+  totalWinnings: number;
+  gamesWon: number;
+  winRate: number;
+  rank: number;
+  period: 'daily' | 'weekly' | 'monthly' | 'all-time';
+  updatedAt: string;
+}
+
+export interface Move {
+  tokenIndex: number;
+  newPosition: number;
+  priority: number;
+}
+---
+c:\Game\app\server\index.ts
+// server/index.ts
+import express from 'express';
+import { Server } from 'socket.io';
+import http from 'http';
+import { databases } from '../lib/appwrite'; // Adjust path based on your setup
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*', // Adjust for production
+  },
+});
+
+io.on('connection', (socket) => {
+  console.log('Player connected:', socket.id);
+
+  socket.on('joinRoom', async (roomId: string, userId: string) => {
+    const room = await databases.getDocument(
+      process.env.APPWRITE_DATABASE_ID!,
+      process.env.APPWRITE_ROOMS_COLLECTION!,
+      roomId
+    );
+    if (!room.players.find((p: any) => p.userId === userId)) {
+      const newPlayers = [
+        ...room.players,
+        {
+          userId,
+          playerNumber: room.currentPlayers + 1,
+          joinedAt: new Date().toISOString(),
+          isReady: false,
+          isBot: false,
+        },
+      ];
+      await databases.updateDocument(
+        process.env.APPWRITE_DATABASE_ID!,
+        process.env.APPWRITE_ROOMS_COLLECTION!,
+        roomId,
+        {
+          currentPlayers: room.currentPlayers + 1,
+          players: newPlayers,
+        }
+      );
+    }
+    socket.join(roomId);
+    io.to(roomId).emit('playerJoined', { userId, playerNumber: room.currentPlayers + 1 });
+  });
+
+  socket.on('rollDice', async (roomId: string, diceValue: number) => {
+    const gameState = await databases.getDocument(
+      process.env.APPWRITE_DATABASE_ID!,
+      process.env.APPWRITE_GAME_STATES_COLLECTION!,
+      roomId
+    );
+    const nextPlayer = getNextPlayer(gameState.currentPlayer);
+    await databases.updateDocument(
+      process.env.APPWRITE_DATABASE_ID!,
+      process.env.APPWRITE_GAME_STATES_COLLECTION!,
+      roomId,
+      {
+        diceValue,
+        currentPlayer: nextPlayer,
+        gameHistory: [
+          ...(gameState.gameHistory || []),
+          {
+            player: gameState.currentPlayer,
+            action: 'roll',
+            dice: diceValue,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+    );
+    io.to(roomId).emit('diceRolled', { roomId, diceValue });
+  });
+
+  socket.on('moveToken', async (roomId: string, data: { tokenIndex: number; newPosition: number }) => {
+    const { tokenIndex, newPosition } = data;
+    const gameState = await databases.getDocument(
+      process.env.APPWRITE_DATABASE_ID!,
+      process.env.APPWRITE_GAME_STATES_COLLECTION!,
+      roomId
+    );
+    const playerKey = `player${gameState.currentPlayer}` as keyof GameState['gameBoard'];
+    const updatedBoard = { ...gameState.gameBoard };
+    const token = updatedBoard[playerKey].tokens[tokenIndex];
+
+    if (newPosition >= 0 && newPosition <= 56 && (!token.isHome || gameState.diceValue === 6)) {
+      updatedBoard[playerKey].tokens[tokenIndex] = {
+        ...token,
+        position: newPosition,
+        isHome: newPosition === 0,
+        isSafe: isSafePosition(newPosition),
+      };
+
+      await databases.updateDocument(
+        process.env.APPWRITE_DATABASE_ID!,
+        process.env.APPWRITE_GAME_STATES_COLLECTION!,
+        roomId,
+        {
+          gameBoard: updatedBoard,
+          gameHistory: [
+            ...gameState.gameHistory,
+            {
+              player: gameState.currentPlayer,
+              action: 'move',
+              tokenIndex,
+              from: token.position,
+              to: newPosition,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }
+      );
+      io.to(roomId).emit('tokenMoved', { roomId, tokenIndex, newPosition });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Player disconnected:', socket.id);
+  });
+});
+
+const getNextPlayer = (currentPlayer?: number): number => {
+  return currentPlayer ? (currentPlayer % 4) + 1 : 1;
+};
+
+const isSafePosition = (position: number): boolean => {
+  const safePositions = [0, 1, 9, 14, 22, 27, 35, 40, 48];
+  return safePositions.includes(position);
+};
+
+server.listen(3000, () => {
+  console.log('Socket.IO server running on port 3000');
+});
+---
+c:\Game\app\services\botService.ts
+// services/botService.ts
+import { GameState, Move } from '../lib/types';
+
+export class BotService {
+  static makeMove(gameState: GameState, playerNumber: number): Move | null {
+    const availableMoves = this.getAvailableMoves(gameState, playerNumber);
+
+    if (!availableMoves.length) return null;
+
+    return availableMoves.reduce((best, current) =>
+      current.priority > best.priority ? current : best
+    );
+  }
+
+  private static getAvailableMoves(gameState: GameState, playerNumber: number): Move[] {
+    const moves: Move[] = [];
+    const playerKey = `player${playerNumber}` as keyof GameState['gameBoard'];
+    const tokens = gameState.gameBoard[playerKey].tokens;
+    const diceValue = gameState.diceValue;
+
+    tokens.forEach((token, index) => {
+      if (this.isValidMove(token, diceValue, gameState)) {
+        const newPosition = token.position + diceValue;
+        let priority = 0;
+
+        if (this.isCaptureMove(newPosition, gameState)) priority += 100;
+        if (this.isSafePosition(newPosition)) priority += 50;
+        if (this.isTowardsFinish(newPosition)) priority += 25;
+        if (token.isHome && diceValue === 6) priority += 10;
+
+        moves.push({ tokenIndex: index, newPosition, priority });
+      }
+    });
+
+    return moves;
+  }
+
+  private static isValidMove(token: GameState['gameBoard']['player1']['tokens'][0], diceValue: number, gameState: GameState): boolean {
+    const newPosition = token.position + diceValue;
+    return newPosition >= 0 && newPosition <= 56 && (!token.isHome || diceValue === 6);
+  }
+
+  private static isCaptureMove(newPosition: number, gameState: GameState): boolean {
+    return !!checkCapture(newPosition, gameState); // Reuse checkCapture from useGameState
+  }
+
+  private static isSafePosition(position: number): boolean {
+    const safePositions = [0, 1, 9, 14, 22, 27, 35, 40, 48];
+    return safePositions.includes(position);
+  }
+
+  private static isTowardsFinish(position: number): boolean {
+    return position > 50;
+  }
+}
+---
+c:\Game\app\services\payment.ts
+// services/payment.ts
+import { Stripe } from '@stripe/stripe-react-native';
+import { databases } from '../lib/appwrite';
+import { Transaction } from '../lib/types';
+
+export const PaymentService = {
+  initializeStripe: async () => {
+    try {
+      await Stripe.initialize({
+        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY!,
+      });
+    } catch (error) {
+      console.error('Stripe Initialization Error:', error);
+      throw error;
+    }
+  },
+
+  createPaymentIntent: async (amount: number): Promise<{ clientSecret: string }> => {
+    try {
+      const response = await fetch('/api/create-payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, currency: 'INR' }),
+      });
+      return response.json();
+    } catch (error) {
+      console.error('Payment Intent Error:', error);
+      throw error;
+    }
+  },
+
+  processPayment: async (userId: string, amount: number, gameRoomId?: string): Promise<Transaction> => {
+    try {
+      const { clientSecret } = await PaymentService.createPaymentIntent(amount);
+      const { paymentIntent, error } = await Stripe.confirmPayment(clientSecret, {
+        paymentMethodType: 'Card',
+      });
+
+      if (error) throw error;
+
+      const transaction = await databases.createDocument(
+        process.env.APPWRITE_DATABASE_ID!,
+        process.env.APPWRITE_TRANSACTIONS_COLLECTION!,
+        'unique()',
+        {
+          userId,
+          type: 'deposit',
+          amount,
+          currency: 'INR',
+          status: 'completed',
+          paymentMethod: 'stripe',
+          stripePaymentId: paymentIntent!.id,
+          gameRoomId,
+          description: 'Deposit to wallet',
+          metadata: {
+            stripeCustomerId: paymentIntent!.customer,
+            paymentMethodId: paymentIntent!.payment_method,
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      );
+
+      const user = await databases.getDocument(
+        process.env.APPWRITE_DATABASE_ID!,
+        process.env.APPWRITE_USERS_COLLECTION!,
+        userId
+      );
+      await databases.updateDocument(
+        process.env.APPWRITE_DATABASE_ID!,
+        process.env.APPWRITE_USERS_COLLECTION!,
+        userId,
+        {
+          wallet: {
+            ...user.wallet,
+            balance: user.wallet.balance + amount,
+            totalDeposits: user.wallet.totalDeposits + amount,
+          },
+        }
+      );
+
+      return (transaction.documents as unknown) as Transaction;
+    } catch (error) {
+      console.error('Payment Processing Error:', error);
+      throw error;
+    }
+  },
+};
+---
+c:\Game\app\_layout.tsx
+// app/_layout.tsx
+import { Stack } from 'expo-router';
+import { PaymentService } from './services/payment';
+import { useEffect } from 'react';
+
+export default function RootLayout() {
+  useEffect(() => {
+    PaymentService.initializeStripe();
+  }, []);
+
+  return (
+    <Stack>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(game)" options={{ headerShown: false }} />
+      <Stack.Screen name="(payment)" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+<Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+      <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
+    </Stack>
+  );
+}
+---

@@ -1,5 +1,25 @@
-import { Stack } from "expo-router";
+// app/_layout.tsx
+import { Stack } from 'expo-router';
+import { PaymentService } from './services/payment';
+import { useEffect } from 'react';
+import { GameProvider } from './context/GameContext';
 
 export default function RootLayout() {
-  return <Stack />;
+  useEffect(() => {
+    PaymentService.initializeStripe();
+  }, []);
+
+  return (
+    <GameProvider>
+    <Stack>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(game)" options={{ headerShown: false }} />
+      <Stack.Screen name="(payment)" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+<Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+      <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
+    </Stack>
+    </GameProvider>
+  );
 }
