@@ -1,7 +1,7 @@
-// app/context/GameContext.tsx
+
 import { createContext, useContext, useState } from 'react';
-import { User } from '../lib/types';
 import { ENTRY_FEES } from '../constants/fees';
+import { User } from '../lib/types';
 
 interface GameContextType {
   user: User | null;

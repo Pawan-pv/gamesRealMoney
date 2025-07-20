@@ -3,12 +3,10 @@ import { useEffect, useState } from 'react';
 import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { useSharedValue, withTiming } from 'react-native-reanimated';
 import { useGameState } from '../../hooks/useGameState';
-import { databases, getCurrentUser } from '../../lib/appwrite';
-import { GameRoom, PlayerKey, User } from '../../lib/types'; // <-- Import GameRoom and PlayerKey
+import { getCurrentUser } from '../../lib/getUser'; // added import
+import { supabase } from '../../lib/supabase'; // fixed import
+import { GameRoom, PlayerKey, User } from '../../lib/types';
 
-// Load environment variables (requires react-native-dotenv setup)
-const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID || 'YOUR_DATABASE_ID';
-const APPWRITE_GAME_STATES_COLLECTION = process.env.APPWRITE_GAME_STATES_COLLECTION || 'YOUR_GAME_STATES_COLLECTION';
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', backgroundColor: '#6B2D26' },
@@ -59,12 +57,10 @@ export default function PlayScreen() {
 
   const handleMove = async (tokenIndex: number) => {
     if (!gameState || !gameState.diceValue) return;
-    // --- Use PlayerKey for proper typing ---
     const playerKey = `player${gameState.currentPlayer}` as PlayerKey;
     const token = gameState.gameBoard[playerKey].tokens[tokenIndex];
     const newPosition = token.position + gameState.diceValue;
 
-    // Check move limit
     const moveCount = gameState.moveCounts[playerKey] || 0;
     const moveLimit = gameState.room.gameSettings.moveLimit || 10;
     if (moveCount >= moveLimit) {
@@ -74,17 +70,16 @@ export default function PlayScreen() {
 
     try {
       await moveToken(tokenIndex, newPosition);
-      await databases.updateDocument(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_GAME_STATES_COLLECTION,
-        roomId as string,
-        {
+      const { error } = await supabase
+        .from('game_states')
+        .update({
           moveCounts: {
             ...gameState.moveCounts,
             [playerKey]: moveCount + 1,
           },
-        }
-      );
+        })
+        .eq('roomId', roomId);
+      if (error) throw error;
     } catch (error) {
       console.error('Move Token Error:', error);
       Alert.alert('Error', 'Failed to move token. Please try again.');
@@ -107,11 +102,12 @@ export default function PlayScreen() {
         <Text style={styles.moveText}>ROLL DICE ({gameState.diceValue || 1})</Text>
       </TouchableOpacity>
       <Text accessibilityLabel={`Moves left for player ${gameState.currentPlayer}`}>
-        Moves Left: {gameState.room.gameSettings.moveLimit -
+        Moves Left:{' '}
+        {gameState.room.gameSettings.moveLimit -
           (gameState.moveCounts[`player${gameState.currentPlayer}` as PlayerKey] || 0)}
       </Text>
       <View style={styles.board}>
-        <Image source={require('../../assets/images/ludo_board_chart.png')} style={styles.boardImage} />
+        <Image source={require('../../../assets/images/ludo_board_chart.png')} style={styles.boardImage} />
         {Object.entries(gameState.gameBoard).map(([playerKey, player]) =>
           player.tokens.map((token, index) => {
             const color = token.color || getPlayerColor(Number(playerKey.replace('player', '')));
@@ -120,25 +116,19 @@ export default function PlayScreen() {
               positionStyle.value = withTiming(getTokenPositionStyle(token.position), { duration: 300 });
             }, [token.position]);
             return (
-              <Animated.View
-                key={`${playerKey}-${index}`}
-                style={[styles.token, positionStyle.value, { zIndex: 1 }]}
-              >
-                <TouchableOpacity
-                  onPress={() => handleMove(index)}
-                  accessibilityLabel={`Move ${color} token ${index + 1}`}
-                >
+              <Animated.View key={`${playerKey}-${index}`} style={[styles.token, positionStyle.value, { zIndex: 1 }]}>
+                <TouchableOpacity onPress={() => handleMove(index)} accessibilityLabel={`Move ${color} token ${index + 1}`}>
                   <Image
                     source={
                       color === 'red'
-                        ? require('../../assets/images/token_red.png')
+                        ? require('../../../assets/images/RED_TOKEN.png')
                         : color === 'green'
-                        ? require('../../assets/images/token_green.png')
+                        ? require('../../../assets/images/GREEN_TOKEN.png')
                         : color === 'yellow'
-                        ? require('../../assets/images/token_yellow.png')
+                        ? require('../../../assets/images/YELLOW_TOKEN.png')
                         : color === 'blue'
-                        ? require('../../assets/images/token_blue.png')
-                        : require('../../assets/images/token_gray.png')
+                        ? require('../../../assets/images/BLUE_TOKEN.png')
+                        : console.log("NO token to move ")
                     }
                     style={{ width: 20, height: 20 }}
                   />
@@ -149,10 +139,10 @@ export default function PlayScreen() {
         )}
       </View>
       <Animated.Image
-        source={require(`../../assets/images/dice_${Math.round(diceValue.value)}.svg`)}
+        source={require(`../../../assets/images/dice_${Math.round(diceValue.value)}.svg`)}
         style={styles.dice}
         accessibilityLabel="Dice roll"
       />
     </View>
   );
-}
+}''

@@ -1,11 +1,8 @@
-// app/(payment)/history.tsx
-import { View, Text, FlatList } from 'react-native';
-import { useState, useEffect } from 'react';
-import { databases } from '../lib/appwrite';
+import { useEffect, useState } from 'react';
+import { FlatList, Text, View } from 'react-native';
+import { getCurrentUser } from '../lib/getUser';
+import { supabase } from '../lib/supabase'; // <-- FIXED: import supabase!
 import { Transaction } from '../lib/types';
-import { getCurrentUser } from '../lib/appwrite';
-import { Query } from 'react-native-appwrite';
-
 
 export default function HistoryScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -16,12 +13,12 @@ export default function HistoryScreen() {
       try {
         const currentUser = await getCurrentUser();
         setUser(currentUser.$id);
-        const response = await databases.listDocuments(
-          process.env.APPWRITE_DATABASE_ID!,
-          process.env.APPWRITE_TRANSACTIONS_COLLECTION!,
-          [Query.equal('userId', currentUser.$id)]
-        );
-        setTransactions((response.documents as unknown) as Transaction[]);
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('userId', currentUser.$id);
+        if (error) throw error;
+        setTransactions(data as Transaction[]);
       } catch (error) {
         console.error('Fetch Transactions Error:', error);
       }

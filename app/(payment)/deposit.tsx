@@ -1,9 +1,10 @@
-import { CardField, useStripe } from '@stripe/stripe-react-native';
+// import { CardField, useStripe } from '@stripe/stripe-react-native';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Button, Text, TextInput, View } from 'react-native';
-import { getCurrentUser } from '../lib/appwrite';
+import { getCurrentUser } from '../lib/getUser'; // <-- FIXED IMPORT
 import { PaymentService } from '../services/payment';
+
 
 export default function DepositScreen() {
   const [amount, setAmount] = useState('');
@@ -17,14 +18,11 @@ export default function DepositScreen() {
   const handleDeposit = async () => {
     setLoading(true);
     try {
-      // 1. Create payment intent
       const { clientSecret } = await PaymentService.createPaymentIntent(Number(amount), 'INR');
       setClientSecret(clientSecret);
 
-      // 2. Get user
       const user = await getCurrentUser();
 
-      // 3. Confirm payment
       const { paymentIntent, error } = await confirmPayment(clientSecret, {
         paymentMethodType: 'Card',
       });
@@ -40,7 +38,6 @@ export default function DepositScreen() {
         return;
       }
 
-      // 4. Record transaction
       await PaymentService.storeTransaction(user.$id, Number(amount), paymentIntent.id);
       Alert.alert('Success', 'Deposit successful!');
       router.push('/(tabs)/wallet');

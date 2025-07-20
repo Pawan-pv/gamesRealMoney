@@ -1,15 +1,10 @@
-// app/(game)/create.tsx
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Button, StyleSheet, Text, View } from 'react-native';
 import { calculatePrizePool } from '../constants/fees';
 import { useGame } from '../context/GameContext';
-import { databases, getCurrentUser } from '../lib/appwrite';
-
-// Load environment variables (requires react-native-dotenv setup in babel.config.js)
-const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID || 'YOUR_DATABASE_ID';
-const APPWRITE_ROOMS_COLLECTION = process.env.APPWRITE_ROOMS_COLLECTION || 'YOUR_ROOMS_COLLECTION';
-const APPWRITE_GAME_STATES_COLLECTION = process.env.APPWRITE_GAME_STATES_COLLECTION || 'YOUR_GAME_STATES_COLLECTION';
+import { getCurrentUser } from '../lib/getUser';
+import { supabase } from '../lib/supabase'; // FIXED: import supabase
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, alignItems: 'center', backgroundColor: '#fff' },
@@ -22,7 +17,6 @@ export default function CreateRoomScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
-  // Extended entry fees (aligned with fees.ts)
   const EXTENDED_FEES = {
     micro: 2,
     beginner: 5,
@@ -36,18 +30,9 @@ export default function CreateRoomScreen() {
     ultimate: 5000,
   } as const;
 
-  // Move limits per tier
   const moveLimits: Record<keyof typeof EXTENDED_FEES, number> = {
-    micro: 16,
-    beginner: 16,
-    amateur: 10,
-    pro: 10,
-    expert: 10,
-    master: 10,
-    elite: 10,
-    legend: 10,
-    champion: 10,
-    ultimate: 10,
+    micro: 16, beginner: 16, amateur: 10, pro: 10, expert: 10,
+    master: 10, elite: 10, legend: 10, champion: 10, ultimate: 10,
   };
 
   useEffect(() => {
@@ -73,7 +58,7 @@ export default function CreateRoomScreen() {
       return;
     }
 
-    setEntryFee(tier); // Set the entry fee in context
+    setEntryFee(tier);
 
     if (user.wallet?.balance === undefined || user.wallet.balance < EXTENDED_FEES[tier]) {
       Alert.alert('Insufficient Balance', 'Please add funds to your wallet to proceed.');
@@ -83,11 +68,9 @@ export default function CreateRoomScreen() {
 
     setLoading(true);
     try {
-      const room = await databases.createDocument(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_ROOMS_COLLECTION,
-        'unique()',
-        {
+      const { data: room, error: roomError } = await supabase
+        .from('rooms')
+        .insert({
           roomCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
           entryFee: EXTENDED_FEES[tier],
           maxPlayers: 4,
@@ -98,7 +81,7 @@ export default function CreateRoomScreen() {
           commission: 0,
           players: [
             {
-              userId: user.$id,
+              userId: user.$id,                 // FIXED: $id, not id
               playerNumber: 1,
               joinedAt: new Date().toISOString(),
               isReady: false,
@@ -107,22 +90,22 @@ export default function CreateRoomScreen() {
           ],
           gameSettings: {
             timeLimit: 600,
-            autoPlay: false, // Fixed typo: was 'autoPlay lotn'
+            autoPlay: false,
             botsEnabled: true,
             moveLimit: moveLimits[tier],
           },
-          createdBy: user.$id,
+          createdBy: user.$id,                  // FIXED: $id, not id
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        }
-      );
+        })
+        .select()
+        .single();
+      if (roomError) throw roomError;
 
-      await databases.createDocument(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_GAME_STATES_COLLECTION,
-        'unique()',
-        {
-          roomId: room.$id,
+      const { error: gameStateError } = await supabase
+        .from('game_states')
+        .insert({
+          roomId: room.id,
           currentPlayer: 1,
           diceValue: 0,
           moveCounts: { player1: 0, player2: 0, player3: 0, player4: 0 },
@@ -135,10 +118,9 @@ export default function CreateRoomScreen() {
           gameHistory: [],
           startedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        }
-      );
+        });
+      if (gameStateError) throw gameStateError;
 
-      // Use object-based navigation for query parameters
       router.push({
         pathname: '/(game)/matchmaking',
         params: { fee: EXTENDED_FEES[tier].toString() },
@@ -179,7 +161,7 @@ export default function CreateRoomScreen() {
                 onPress={() => handleSelectTier(tier as keyof typeof EXTENDED_FEES)}
                 disabled={loading}
                 accessibilityLabel={
-                  user?.wallet?.balance ?? 0 >= fee
+                  (user?.wallet?.balance ?? 0) >= fee
                     ? `Continue with ${fee} rupees entry`
                     : `Add cash to play with ${fee} rupees entry`
                 }

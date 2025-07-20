@@ -1,13 +1,10 @@
-// app/(game)/room/[id].tsx
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Button, Text, View } from 'react-native';
 import { useSocketIO } from '../../hooks/useSocketIo';
-import { databases, getCurrentUser } from '../../lib/appwrite';
+import { getCurrentUser } from '../../lib/getUser';
+import { supabase } from '../../lib/supabase';
 import { GameRoom, User } from '../../lib/types';
-
-const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID!;
-const APPWRITE_ROOMS_COLLECTION = process.env.APPWRITE_ROOMS_COLLECTION!;
 
 export default function GameRoomScreen() {
   const { id: roomId } = useLocalSearchParams();
@@ -36,12 +33,13 @@ export default function GameRoomScreen() {
     let mounted = true;
     (async () => {
       try {
-        const roomDoc = await databases.getDocument(
-          APPWRITE_DATABASE_ID,
-          APPWRITE_ROOMS_COLLECTION,
-          roomId as string
-        );
-        if (mounted) setRoom((roomDoc.documents as unknown) as GameRoom);
+        const { data, error } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('$id', roomId) // Use '$id' if that's your PK. Use 'id' if not!
+          .single();
+        if (error) throw error;
+        if (mounted) setRoom(data as GameRoom);
       } catch (err) {
         Alert.alert('Error', 'Failed to fetch room');
       }
@@ -69,15 +67,14 @@ export default function GameRoomScreen() {
         },
       ];
       try {
-        await databases.updateDocument(
-          APPWRITE_DATABASE_ID,
-          APPWRITE_ROOMS_COLLECTION,
-          roomId as string,
-          {
+        const { error } = await supabase
+          .from('rooms')
+          .update({
             currentPlayers: room.currentPlayers + 1,
             players: newPlayers,
-          }
-        );
+          })
+          .eq('$id', roomId); // Use '$id' if that's your PK in your table!
+        if (error) throw error;
         setRoom({
           ...room,
           currentPlayers: room.currentPlayers + 1,

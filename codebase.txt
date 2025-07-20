@@ -15,33 +15,27 @@ export default function CallbackScreen() {
 }
 ---
 c:\Game\app\(auth)\login.tsx
-import { View, Text, Button, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { loginWithGoogle } from '../lib/appwrite';
-import * as WebBrowser from 'expo-web-browser';
+import { Alert, Button, Text, View } from 'react-native';
+import { loginWithGoogle } from '../lib/auth'; // Make sure path is correct
 
 export default function LoginScreen() {
   const router = useRouter();
 
   const handleLogin = async () => {
-    try {
-      const result = await loginWithGoogle();
-      switch (result.type) {
-        case 'success':
-          router.push('/(tabs)');
-          break;
-        case 'cancel':
-          Alert.alert('Login Cancelled', 'You cancelled the Google login process.');
-          break;
-        case 'dismiss':
-          Alert.alert('Login Dismissed', 'The browser window was closed. Please try again.');
-          break;
-        default:
-          Alert.alert('Login Error', 'An unexpected error occurred. Please try again later.');
-      }
-    } catch (error) {
-      console.error('Login Error:', error);
-      Alert.alert('Login Failed', 'An error occurred during login. Please check your connection and try again.');
+    const result = await loginWithGoogle();
+    switch (result.type) {
+      case 'success':
+        router.push('/(tabs)');
+        break;
+      case 'cancel':
+        Alert.alert('Login Cancelled', 'You cancelled the Google login process.');
+        break;
+      case 'dismiss':
+        Alert.alert('Login Dismissed', 'The browser window was closed. Please try again.');
+        break;
+      default:
+        Alert.alert('Login Error', 'An unexpected error occurred. Please try again later.');
     }
   };
 
@@ -54,81 +48,129 @@ export default function LoginScreen() {
     </View>
   );
 }
+
 ---
 c:\Game\app\(auth)\register.tsx
 import { useRouter } from 'expo-router';
 import { Alert, Button, Text, View } from 'react-native';
-import { loginWithGoogle } from '../lib/appwrite';
+import { loginWithGoogle } from '../lib/auth'; // Make sure path is correct
 
-export default function RegisterScreen() {
+export default function LoginScreen() {
   const router = useRouter();
 
-  const handleRegister = async () => {
-    try {
-      const result = await loginWithGoogle();
-      switch (result.type) {
-        case 'success':
-          router.push('/(tabs)');
-          break;
-        case 'cancel':
-          Alert.alert('Registration Cancelled', 'You cancelled the Google registration process.');
-          break;
-        case 'dismiss':
-          Alert.alert('Registration Dismissed', 'The browser window was closed. Please try again.');
-          break;
-        default:
-          Alert.alert('Registration Error', 'An unexpected error occurred. Please try again later.');
-      }
-    } catch (error) {
-      console.error('Register Error:', error);
-      Alert.alert('Registration Failed', 'An error occurred during registration. Please check your connection and try again.');
+  const handleLogin = async () => {
+    const result = await loginWithGoogle();
+    switch (result.type) {
+      case 'success':
+        router.push('/(tabs)');
+        break;
+      case 'cancel':
+        Alert.alert('Login Cancelled', 'You cancelled the Google login process.');
+        break;
+      case 'dismiss':
+        Alert.alert('Login Dismissed', 'The browser window was closed. Please try again.');
+        break;
+      default:
+        Alert.alert('Login Error', 'An unexpected error occurred. Please try again later.');
     }
   };
 
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
       <Text style={{ marginBottom: 10, fontSize: 16 }}>
-        Don't have an account? Click below to register with Google.
+        Already have an account? Click below to log in with Google.
       </Text>
-      <Button title="Register with Google" onPress={handleRegister} />
+      <Button title="Login with Google" onPress={handleLogin} />
     </View>
   );
 }
+
 ---
 c:\Game\app\(game)\create.tsx
-// app/(game)/create.tsx
-import { View, Text, Button, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { databases } from '../lib/appwrite';
-import { getCurrentUser } from '../lib/appwrite';
-import { ENTRY_FEES } from '../constants/fees';
-import { User } from '../lib/types';
+import { useEffect, useState } from 'react';
+import { Alert, Button, StyleSheet, Text, View } from 'react-native';
+import { calculatePrizePool } from '../constants/fees';
+import { useGame } from '../context/GameContext';
+import { getCurrentUser } from '../lib/getUser';
+import { supabase } from '../lib/supabase'; // FIXED: import supabase
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 20, alignItems: 'center', backgroundColor: '#fff' },
+  tierCard: { padding: 10, borderWidth: 1, borderRadius: 5, marginBottom: 10, width: '100%' },
+  tierText: { fontSize: 16, marginBottom: 5 },
+});
 
 export default function CreateRoomScreen() {
-  const [entryFee, setEntryFee] = useState<keyof typeof ENTRY_FEES>('beginner');
-  const [gameType, setGameType] = useState<'classic' | 'quick' | 'tournament'>('classic');
+  const { user, setUser, setEntryFee } = useGame();
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
-  const createRoom = async () => {
+  const EXTENDED_FEES = {
+    micro: 2,
+    beginner: 5,
+    amateur: 10,
+    pro: 25,
+    expert: 50,
+    master: 100,
+    elite: 250,
+    legend: 500,
+    champion: 1000,
+    ultimate: 5000,
+  } as const;
+
+  const moveLimits: Record<keyof typeof EXTENDED_FEES, number> = {
+    micro: 16, beginner: 16, amateur: 10, pro: 10, expert: 10,
+    master: 10, elite: 10, legend: 10, champion: 10, ultimate: 10,
+  };
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        setLoading(true);
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch (error) {
+        console.error('Fetch User Error:', error);
+        Alert.alert('Error', 'Failed to load user data. Please try logging in again.');
+        router.push('/(auth)/login');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUser();
+  }, [setUser, router]);
+
+  const handleSelectTier = async (tier: keyof typeof EXTENDED_FEES) => {
+    if (!user) {
+      Alert.alert('Error', 'User not loaded. Please try again.');
+      return;
+    }
+
+    setEntryFee(tier);
+
+    if (user.wallet?.balance === undefined || user.wallet.balance < EXTENDED_FEES[tier]) {
+      Alert.alert('Insufficient Balance', 'Please add funds to your wallet to proceed.');
+      router.push('/(payment)/deposit');
+      return;
+    }
+
+    setLoading(true);
     try {
-      const user = await getCurrentUser();
-      const room = await databases.createDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_ROOMS_COLLECTION!,
-        'unique()',
-        {
+      const { data: room, error: roomError } = await supabase
+        .from('rooms')
+        .insert({
           roomCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
-          entryFee: ENTRY_FEES[entryFee],
+          entryFee: EXTENDED_FEES[tier],
           maxPlayers: 4,
           currentPlayers: 1,
-          gameType,
+          gameType: 'classic',
           status: 'waiting',
           prizePool: 0,
           commission: 0,
           players: [
             {
-              userId: user.$id,
+              userId: user.$id,                 // FIXED: $id, not id
               playerNumber: 1,
               joinedAt: new Date().toISOString(),
               isReady: false,
@@ -139,21 +181,23 @@ export default function CreateRoomScreen() {
             timeLimit: 600,
             autoPlay: false,
             botsEnabled: true,
+            moveLimit: moveLimits[tier],
           },
-          createdBy: user.$id,
+          createdBy: user.$id,                  // FIXED: $id, not id
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        }
-      );
+        })
+        .select()
+        .single();
+      if (roomError) throw roomError;
 
-      await databases.createDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_GAME_STATES_COLLECTION!,
-        'unique()',
-        {
-          roomId: room.$id,
+      const { error: gameStateError } = await supabase
+        .from('game_states')
+        .insert({
+          roomId: room.id,
           currentPlayer: 1,
           diceValue: 0,
+          moveCounts: { player1: 0, player2: 0, player3: 0, player4: 0 },
           gameBoard: {
             player1: { tokens: Array(4).fill({ position: 0, isHome: true, isSafe: false, color: 'red' }) },
             player2: { tokens: Array(4).fill({ position: 0, isHome: true, isSafe: false, color: 'green' }) },
@@ -163,50 +207,192 @@ export default function CreateRoomScreen() {
           gameHistory: [],
           startedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-        }
-      );
+        });
+      if (gameStateError) throw gameStateError;
 
-      router.push(`/game/room/${room.$id}`);
+      router.push({
+        pathname: '/(game)/matchmaking',
+        params: { fee: EXTENDED_FEES[tier].toString() },
+      });
     } catch (error) {
       console.error('Create Room Error:', error);
+      Alert.alert('Error', 'Failed to create game room. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Create Game Room</Text>
-      <TextInput
-        value={entryFee}
-        onChangeText={(text) => setEntryFee(text as keyof typeof ENTRY_FEES)}
-        placeholder="Select Entry Fee (beginner, amateur, pro, expert, master)"
-      />
-      <TextInput
-        value={gameType}
-        onChangeText={(text) => setGameType(text as 'classic' | 'quick' | 'tournament')}
-        placeholder="Game Type (classic, quick, tournament)"
-      />
-      <Button title="Create Room" onPress={createRoom} />
+    <View style={styles.container}>
+      <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 20 }} accessibilityLabel="Ludo Game Setup">
+        Ludo Game Setup
+      </Text>
+      {loading && <Text>Loading...</Text>}
+      {!loading &&
+        Object.entries(EXTENDED_FEES).map(([tier, fee]) => {
+          const { winnerAmount, runnerUpAmount } = calculatePrizePool(fee, 4);
+          return (
+            <View key={tier} style={styles.tierCard}>
+              <Text
+                style={styles.tierText}
+                accessibilityLabel={`Entry fee ${fee} rupees, ${moveLimits[tier as keyof typeof EXTENDED_FEES]} moves`}
+              >
+                Entry: ₹{fee} - {moveLimits[tier as keyof typeof EXTENDED_FEES]} Moves
+              </Text>
+              <Text
+                style={styles.tierText}
+                accessibilityLabel={`Winner prize ${winnerAmount} rupees, Runner-up prize ${runnerUpAmount} rupees`}
+              >
+                Winner: ₹{winnerAmount}, Runner-up: ₹{runnerUpAmount}
+              </Text>
+              <Button
+                title={(user?.wallet?.balance ?? 0) >= fee ? 'Continue' : 'Add Cash & Play'}
+                onPress={() => handleSelectTier(tier as keyof typeof EXTENDED_FEES)}
+                disabled={loading}
+                accessibilityLabel={
+                  (user?.wallet?.balance ?? 0) >= fee
+                    ? `Continue with ${fee} rupees entry`
+                    : `Add cash to play with ${fee} rupees entry`
+                }
+              />
+            </View>
+          );
+        })}
     </View>
   );
 }
+
+---
+c:\Game\app\(game)\matchmaking.tsx
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Alert, Text, View } from 'react-native';
+import { useSocketIO } from '../hooks/useSocketIo';
+import { getCurrentUser } from '../lib/getUser';
+import { supabase } from '../lib/supabase';
+import { GameRoom, User } from '../lib/types';
+
+export default function MatchmakingScreen() {
+  const { fee } = useLocalSearchParams(); // fee is a string
+  const router = useRouter();
+  const { socket, connect } = useSocketIO();
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch (error) {
+        router.push('/(auth)/login');
+      }
+    };
+    fetchUser();
+  }, []);
+
+  useEffect(() => {
+    if (!user || !fee) return;
+    const findOrCreateRoom = async () => {
+      try {
+        // Find waiting room with this fee
+        const { data: rooms, error } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('entryFee', parseFloat(fee as string))
+          .eq('status', 'waiting');
+        if (error) throw error;
+
+        const foundRoom = rooms?.length ? rooms[0] as GameRoom : null;
+
+        if (foundRoom && foundRoom.currentPlayers < foundRoom.maxPlayers) {
+          setRoomId(foundRoom.$id);
+          router.push(`/game/room/${foundRoom.$id}` as any);
+        } else {
+          // Create a new room
+          const { data: room, error: createError } = await supabase
+            .from('rooms')
+            .insert({
+              roomCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+              entryFee: parseFloat(fee as string),
+              maxPlayers: 4,
+              currentPlayers: 1,
+              gameType: 'classic',
+              status: 'waiting',
+              prizePool: 0,
+              commission: 0,
+              players: [
+                {
+                  userId: user.$id,
+                  playerNumber: 1,
+                  joinedAt: new Date().toISOString(),
+                  isReady: false,
+                  isBot: false,
+                },
+              ],
+              gameSettings: {
+                timeLimit: 600,
+                autoPlay: false,
+                botsEnabled: true,
+                moveLimit: fee === '2' ? 16 : 10,
+              },
+              createdBy: user.$id,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            })
+            .select()
+            .single();
+          if (createError) throw createError;
+          setRoomId(room.$id);
+          router.push(`/game/room/${room.$id}` as any);
+        }
+      } catch (error) {
+        console.error('Matchmaking Error:', error);
+        Alert.alert('Error', 'Failed to find or create a room. Please try again.');
+      }
+    };
+    findOrCreateRoom();
+  }, [fee, user]);
+
+  useEffect(() => {
+    if (roomId && socket && user) {
+      connect(roomId, user.$id);
+      socket.on('roomFull', async (data: { roomId: string }) => {
+        await supabase
+          .from('rooms')
+          .update({ status: 'playing' })
+          .eq('$id', data.roomId); // using $id as key
+        router.push(`/play/${data.roomId}`);
+      });
+    }
+    return () => {
+      if (socket) socket.off('roomFull');
+    };
+  }, [roomId, socket, user]);
+
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Waiting for players...</Text>
+    </View>
+  );
+}
+
 ---
 c:\Game\app\(game)\play\[id].tsx
-// app/(game)/play/[id].tsx
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Animated, { useSharedValue, withTiming } from 'react-native-reanimated';
 import { useGameState } from '../../hooks/useGameState';
-import { getCurrentUser } from '../../lib/appwrite';
-import { GameState, User } from '../../lib/types';
+import { getCurrentUser } from '../../lib/getUser'; // added import
+import { supabase } from '../../lib/supabase'; // fixed import
+import { GameRoom, PlayerKey, User } from '../../lib/types';
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', backgroundColor: '#6B2D26' },
   board: { width: 300, height: 300, position: 'relative' },
-  quadrant: { position: 'absolute', width: '50%', height: '50%' },
-  redQuadrant: { top: 0, left: 0, backgroundColor: 'red' },
-  greenQuadrant: { top: 0, right: 0, backgroundColor: 'green' },
-  yellowQuadrant: { bottom: 0, right: 0, backgroundColor: 'yellow' },
-  blueQuadrant: { bottom: 0, left: 0, backgroundColor: 'blue' },
+  boardImage: { width: 300, height: 300, position: 'absolute' },
   token: { position: 'absolute', width: 20, height: 20 },
   dice: { width: 50, height: 50, margin: 10 },
   moveButton: { backgroundColor: 'red', padding: 10, borderRadius: 5, marginTop: 10 },
@@ -214,12 +400,7 @@ const styles = StyleSheet.create({
 });
 
 const getPlayerColor = (playerNumber: number): string => {
-  const colors: Record<number, string> = {
-    1: 'red',
-    2: 'green',
-    3: 'yellow',
-    4: 'blue',
-  };
+  const colors: Record<number, string> = { 1: 'red', 2: 'green', 3: 'yellow', 4: 'blue' };
   return colors[playerNumber] || 'gray';
 };
 
@@ -234,23 +415,55 @@ export default function PlayScreen() {
   const { id: roomId } = useLocalSearchParams();
   const { gameState, rollDice, moveToken, isLoading } = useGameState(roomId as string);
   const [user, setUser] = useState<User | null>(null);
-  const [selectedToken, setSelectedToken] = useState<number | null>(null);
+  const diceValue = useSharedValue(gameState?.diceValue || 1);
 
   useEffect(() => {
     const fetchUser = async () => {
-      const currentUser = await getCurrentUser();
-      setUser(currentUser);
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch (error) {
+        console.error('Fetch User Error:', error);
+        Alert.alert('Error', 'Failed to load user data. Please try again.');
+      }
     };
     fetchUser();
   }, []);
 
-  const handleMove = (tokenIndex: number) => {
-    if (gameState && gameState.diceValue && selectedToken === null) {
-      const playerKey = `player${gameState.currentPlayer}` as keyof GameState['gameBoard'];
-      const token = gameState.gameBoard[playerKey].tokens[tokenIndex];
-      const newPosition = token.position + gameState.diceValue;
-      moveToken(tokenIndex, newPosition);
-      setSelectedToken(null);
+  useEffect(() => {
+    if (gameState?.diceValue) {
+      diceValue.value = withTiming(gameState.diceValue, { duration: 500 });
+    }
+  }, [gameState?.diceValue]);
+
+  const handleMove = async (tokenIndex: number) => {
+    if (!gameState || !gameState.diceValue) return;
+    const playerKey = `player${gameState.currentPlayer}` as PlayerKey;
+    const token = gameState.gameBoard[playerKey].tokens[tokenIndex];
+    const newPosition = token.position + gameState.diceValue;
+
+    const moveCount = gameState.moveCounts[playerKey] || 0;
+    const moveLimit = gameState.room.gameSettings.moveLimit || 10;
+    if (moveCount >= moveLimit) {
+      Alert.alert('Move Limit Reached', 'You have reached the maximum number of moves for this game.');
+      return;
+    }
+
+    try {
+      await moveToken(tokenIndex, newPosition);
+      const { error } = await supabase
+        .from('game_states')
+        .update({
+          moveCounts: {
+            ...gameState.moveCounts,
+            [playerKey]: moveCount + 1,
+          },
+        })
+        .eq('roomId', roomId);
+      if (error) throw error;
+    } catch (error) {
+      console.error('Move Token Error:', error);
+      Alert.alert('Error', 'Failed to move token. Please try again.');
     }
   };
 
@@ -261,74 +474,69 @@ export default function PlayScreen() {
       <TouchableOpacity
         style={styles.moveButton}
         onPress={rollDice}
-        disabled={!gameState.currentPlayer || !gameState.diceValue}
+        disabled={
+          gameState.currentPlayer !==
+          gameState.players.find((p: GameRoom['players'][0]) => p.userId === user?.$id)?.playerNumber
+        }
+        accessibilityLabel="Roll dice button"
       >
         <Text style={styles.moveText}>ROLL DICE ({gameState.diceValue || 1})</Text>
       </TouchableOpacity>
+      <Text accessibilityLabel={`Moves left for player ${gameState.currentPlayer}`}>
+        Moves Left:{' '}
+        {gameState.room.gameSettings.moveLimit -
+          (gameState.moveCounts[`player${gameState.currentPlayer}` as PlayerKey] || 0)}
+      </Text>
       <View style={styles.board}>
-        <View style={[styles.quadrant, styles.redQuadrant]} />
-        <View style={[styles.quadrant, styles.greenQuadrant]} />
-        <View style={[styles.quadrant, styles.yellowQuadrant]} />
-        <View style={[styles.quadrant, styles.blueQuadrant]} />
-        <View
-          style={{
-            position: 'absolute',
-            top: '25%',
-            left: '25%',
-            width: '50%',
-            height: '50%',
-            backgroundColor: 'white',
-          }}
-        />
+        <Image source={require('../../assets/images/ludo_board_chart.png')} style={styles.boardImage} />
         {Object.entries(gameState.gameBoard).map(([playerKey, player]) =>
           player.tokens.map((token, index) => {
-            // Make each token clickable
-            const color = (token as any).color || getPlayerColor(Number(playerKey.replace('player', '')));
+            const color = token.color || getPlayerColor(Number(playerKey.replace('player', '')));
+            const positionStyle = useSharedValue(getTokenPositionStyle(token.position));
+            useEffect(() => {
+              positionStyle.value = withTiming(getTokenPositionStyle(token.position), { duration: 300 });
+            }, [token.position]);
             return (
-              <TouchableOpacity
-                key={`${playerKey}-${index}`}
-                // onPress is on TouchableOpacity, not Image!
-                onPress={() => handleMove(index)}
-                style={[styles.token, getTokenPositionStyle(token.position), { zIndex: 1 }]}
-              >
-                <Image
-                  source={
-                    // Use require for local images
-                    color === 'red'
-                      ? require('../../assets/images/token_red.png')
-                      : color === 'green'
-                      ? require('../../assets/images/token_green.png')
-                      : color === 'yellow'
-                      ? require('../../assets/images/token_yellow.png')
-                      : color === 'blue'
-                      ? require('../../assets/images/token_blue.png')
-                      : require('../../assets/images/token_gray.png')
-                  }
-                  style={{ width: 20, height: 20 }}
-                  // No onPress on Image
-                />
-              </TouchableOpacity>
+              <Animated.View key={`${playerKey}-${index}`} style={[styles.token, positionStyle.value, { zIndex: 1 }]}>
+                <TouchableOpacity onPress={() => handleMove(index)} accessibilityLabel={`Move ${color} token ${index + 1}`}>
+                  <Image
+                    source={
+                      color === 'red'
+                        ? require('../../assets/images/token_red.png')
+                        : color === 'green'
+                        ? require('../../assets/images/token_green.png')
+                        : color === 'yellow'
+                        ? require('../../assets/images/token_yellow.png')
+                        : color === 'blue'
+                        ? require('../../assets/images/token_blue.png')
+                        : require('../../assets/images/token_gray.png')
+                    }
+                    style={{ width: 20, height: 20 }}
+                  />
+                </TouchableOpacity>
+              </Animated.View>
             );
           })
         )}
       </View>
-      <Image source={require('../../assets/images/dice.png')} style={styles.dice} />
+      <Animated.Image
+        source={require(`../../assets/images/dice_${Math.round(diceValue.value)}.svg`)}
+        style={styles.dice}
+        accessibilityLabel="Dice roll"
+      />
     </View>
   );
 }
 
 ---
 c:\Game\app\(game)\room\[id].tsx
-// app/(game)/room/[id].tsx
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Button, Text, View } from 'react-native';
 import { useSocketIO } from '../../hooks/useSocketIo';
-import { databases, getCurrentUser } from '../../lib/appwrite';
+import { getCurrentUser } from '../../lib/getUser';
+import { supabase } from '../../lib/supabase';
 import { GameRoom, User } from '../../lib/types';
-
-const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID!;
-const APPWRITE_ROOMS_COLLECTION = process.env.APPWRITE_ROOMS_COLLECTION!;
 
 export default function GameRoomScreen() {
   const { id: roomId } = useLocalSearchParams();
@@ -357,12 +565,13 @@ export default function GameRoomScreen() {
     let mounted = true;
     (async () => {
       try {
-        const roomDoc = await databases.getDocument(
-          APPWRITE_DATABASE_ID,
-          APPWRITE_ROOMS_COLLECTION,
-          roomId as string
-        );
-        if (mounted) setRoom((roomDoc.documents as unknown) as GameRoom);
+        const { data, error } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('$id', roomId) // Use '$id' if that's your PK. Use 'id' if not!
+          .single();
+        if (error) throw error;
+        if (mounted) setRoom(data as GameRoom);
       } catch (err) {
         Alert.alert('Error', 'Failed to fetch room');
       }
@@ -390,15 +599,14 @@ export default function GameRoomScreen() {
         },
       ];
       try {
-        await databases.updateDocument(
-          APPWRITE_DATABASE_ID,
-          APPWRITE_ROOMS_COLLECTION,
-          roomId as string,
-          {
+        const { error } = await supabase
+          .from('rooms')
+          .update({
             currentPlayers: room.currentPlayers + 1,
             players: newPlayers,
-          }
-        );
+          })
+          .eq('$id', roomId); // Use '$id' if that's your PK in your table!
+        if (error) throw error;
         setRoom({
           ...room,
           currentPlayers: room.currentPlayers + 1,
@@ -457,27 +665,51 @@ export default function GameRoomScreen() {
 
 ---
 c:\Game\app\(payment)\deposit.tsx
-// app/(payment)/deposit.tsx
-import { View, Text, Button, TextInput } from 'react-native';
-import { useState } from 'react';
-import { PaymentService } from '../services/payment';
-import { getCurrentUser } from '../lib/appwrite';
+import { CardField, useStripe } from '@stripe/stripe-react-native';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Button, Text, TextInput, View } from 'react-native';
+import { getCurrentUser } from '../lib/getUser'; // <-- FIXED IMPORT
+import { PaymentService } from '../services/payment';
+
 
 export default function DepositScreen() {
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [cardError, setCardError] = useState<string | null>(null);
+
   const router = useRouter();
+  const { confirmPayment } = useStripe();
 
   const handleDeposit = async () => {
     setLoading(true);
     try {
+      const { clientSecret } = await PaymentService.createPaymentIntent(Number(amount), 'INR');
+      setClientSecret(clientSecret);
+
       const user = await getCurrentUser();
-      await PaymentService.processPayment(user.$id, parseFloat(amount));
-      alert('Deposit successful!');
+
+      const { paymentIntent, error } = await confirmPayment(clientSecret, {
+        paymentMethodType: 'Card',
+      });
+
+      if (error) {
+        setCardError(error.message || 'Payment failed');
+        setLoading(false);
+        return;
+      }
+      if (paymentIntent?.status !== 'Succeeded') {
+        setCardError('Payment status is not successful');
+        setLoading(false);
+        return;
+      }
+
+      await PaymentService.storeTransaction(user.$id, Number(amount), paymentIntent.id);
+      Alert.alert('Success', 'Deposit successful!');
       router.push('/(tabs)/wallet');
     } catch (error: any) {
-      alert('Deposit failed: ' + error.message);
+      Alert.alert('Deposit failed', error?.message || 'Error');
     } finally {
       setLoading(false);
     }
@@ -491,21 +723,30 @@ export default function DepositScreen() {
         onChangeText={setAmount}
         placeholder="Enter amount (INR)"
         keyboardType="numeric"
+        style={{ padding: 12, borderWidth: 1, borderRadius: 6, width: 200, marginVertical: 12 }}
       />
-      <Button title="Deposit" onPress={handleDeposit} disabled={loading} />
+      <CardField
+        postalCodeEnabled={false}
+        style={{ width: 300, height: 50, marginVertical: 20 }}
+        onCardChange={
+          cardDetails => {
+            if (cardDetails.complete) setCardError(null);
+          }
+        }
+      />
+      {cardError && <Text style={{ color: 'red' }}>{cardError}</Text>}
+      <Button title={loading ? "Processing..." : "Deposit"} onPress={handleDeposit} disabled={loading} />
+      {loading && <ActivityIndicator style={{ marginTop: 15 }} />}
     </View>
   );
 }
 ---
 c:\Game\app\(payment)\history.tsx
-// app/(payment)/history.tsx
-import { View, Text, FlatList } from 'react-native';
-import { useState, useEffect } from 'react';
-import { databases } from '../lib/appwrite';
+import { useEffect, useState } from 'react';
+import { FlatList, Text, View } from 'react-native';
+import { getCurrentUser } from '../lib/getUser';
+import { supabase } from '../lib/supabase'; // <-- FIXED: import supabase!
 import { Transaction } from '../lib/types';
-import { getCurrentUser } from '../lib/appwrite';
-import { Query } from 'react-native-appwrite';
-
 
 export default function HistoryScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -516,12 +757,12 @@ export default function HistoryScreen() {
       try {
         const currentUser = await getCurrentUser();
         setUser(currentUser.$id);
-        const response = await databases.listDocuments(
-          process.env.APPWRITE_DATABASE_ID!,
-          process.env.APPWRITE_TRANSACTIONS_COLLECTION!,
-          [Query.equal('userId', currentUser.$id)]
-        );
-        setTransactions((response.documents as unknown) as Transaction[]);
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('userId', currentUser.$id);
+        if (error) throw error;
+        setTransactions(data as Transaction[]);
       } catch (error) {
         console.error('Fetch Transactions Error:', error);
       }
@@ -547,6 +788,7 @@ export default function HistoryScreen() {
     </View>
   );
 }
+
 ---
 c:\Game\app\(payment)\withdraw.tsx
 // app/(payment)/withdraw.tsx
@@ -565,18 +807,92 @@ export default function WithdrawScreen() {
 }
 ---
 c:\Game\app\(tabs)\games.tsx
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Button, FlatList, Text, View } from 'react-native';
+import { supabase } from '../lib/supabase'; // fixed import
+import { GameRoom } from '../lib/types';
+
+export default function GamesScreen() {
+  const [rooms, setRooms] = useState<GameRoom[]>([]);
+  const router = useRouter();
+
+  useEffect(() => {
+    const fetchRooms = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('status', 'waiting');
+        if (error) throw error;
+        setRooms(data as GameRoom[]);
+      } catch (error) {
+        console.error('Fetch Rooms Error:', error);
+      }
+    };
+    fetchRooms();
+  }, []);
+
+  const joinRoom = (roomId: string) => {
+    router.push(`/game/room/${roomId}` as any);
+  };
+
+  return (
+    <View style={{ flex: 1, padding: 10 }}>
+      <Text>Available Games</Text>
+      <FlatList
+        data={rooms}
+        keyExtractor={(item) => item.$id} // fixed
+        renderItem={({ item }) => (
+          <View style={{ padding: 10, borderBottomWidth: 1 }}>
+            <Text>Room: {item.roomCode}</Text>
+            <Text>Entry Fee: ₹{item.entryFee}</Text>
+            <Text>Players: {item.currentPlayers}/{item.maxPlayers}</Text>
+            <Button title="Join" onPress={() => joinRoom(item.$id)} /> {/* fixed */}
+          </View>
+        )}
+      />
+    </View>
+  );
+}
 
 ---
 c:\Game\app\(tabs)\index.tsx
-// app/(tabs)/index.tsx
-import { View, Text, Button } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
-import { getCurrentUser } from '../lib/appwrite';
-import { User } from '../lib/types';
+import { useEffect } from 'react';
+import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { getCurrentUser } from '../lib/getUser'; // FIXED: import from lib/getUser
+import { useGame } from '../context/GameContext';
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 10, backgroundColor: '#fff' },
+  profile: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  avatar: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginVertical: 10 },
+  gameCard: { padding: 10, borderWidth: 1, borderRadius: 5, marginBottom: 10 },
+});
+
+interface GameCardProps {
+  title: string;
+  route?: string;
+  isPlaceholder?: boolean;
+}
+
+const GameCard: React.FC<GameCardProps> = ({ title, route, isPlaceholder }) => {
+  const router = useRouter();
+  return (
+    <TouchableOpacity
+      style={[styles.gameCard, { opacity: isPlaceholder ? 0.5 : 1 }]}
+      onPress={route ? () => router.push(route as any) : undefined}
+      disabled={isPlaceholder}
+    >
+      <Text>{title}</Text>
+    </TouchableOpacity>
+  );
+};
 
 export default function HomeScreen() {
-  const [user, setUser] = useState<User | null>(null);
+  const { user, setUser } = useGame();
   const router = useRouter();
 
   useEffect(() => {
@@ -591,24 +907,49 @@ export default function HomeScreen() {
     fetchUser();
   }, []);
 
+  const trendingGames = [{ id: '1', title: 'Coming Soon', isPlaceholder: true }];
+  const forYouGames = [{ id: '2', title: 'Coming Soon', isPlaceholder: true }];
+  const popularGames = [{ id: 'ludo', title: 'Ludo', route: '/(game)/create' }];
+
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Welcome, {user?.name || 'Guest'}!</Text>
-      <Text>Wallet Balance: ₹{user?.wallet.balance || 0}</Text>
-      <Button title="Create Game" onPress={() => router.push('/(game)/create')} />
-      <Button title="Join Game" onPress={() => router.push('/(tabs)/games')} />
+    <View style={styles.container}>
+      <View style={styles.profile}>
+        <Image
+          source={{ uri: user?.avatar || 'https://via.placeholder.com/40' }}
+          style={styles.avatar}
+          accessibilityLabel="User avatar"
+        />
+        <Text accessibilityLabel="User name">{user?.name || 'Guest'}</Text>
+      </View>
+      <Text style={styles.sectionTitle}>Wallet Balance: ₹{user?.wallet?.balance ?? 0}</Text>
+      <Text style={styles.sectionTitle}>Trending Games 🔥</Text>
+      <FlatList
+        data={trendingGames}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <GameCard title={item.title} isPlaceholder={item.isPlaceholder} />}
+      />
+      <Text style={styles.sectionTitle}>For You 🎯</Text>
+      <FlatList
+        data={forYouGames}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <GameCard title={item.title} isPlaceholder={item.isPlaceholder} />}
+      />
+      <Text style={styles.sectionTitle}>Popular Games ⭐</Text>
+      <FlatList
+        data={popularGames}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <GameCard title={item.title} route={item.route} />}
+      />
     </View>
   );
 }
+
 ---
 c:\Game\app\(tabs)\leaderboard.tsx
-// app/(tabs)/leaderboard.tsx
 import { useEffect, useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
-import { databases } from '../lib/appwrite';
+import { supabase } from '../lib/supabase';
 import { LeaderboardEntry } from '../lib/types';
-import { Query } from 'react-native-appwrite';
-
 
 export default function LeaderboardScreen() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -616,12 +957,12 @@ export default function LeaderboardScreen() {
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        const response = await databases.listDocuments(
-          process.env.APPWRITE_DATABASE_ID!,
-          process.env.APPWRITE_LEADERBOARD_COLLECTION!,
-          [Query.orderDesc('totalWinnings')]
-        );
-        setLeaderboard((response.documents as unknown) as LeaderboardEntry[]);
+        const { data, error } = await supabase
+          .from('leaderboard')
+          .select('*')
+          .order('totalWinnings', { ascending: false });
+        if (error) throw error;
+        setLeaderboard(data as LeaderboardEntry[]);
       } catch (error) {
         console.error('Fetch Leaderboard Error:', error);
       }
@@ -647,10 +988,9 @@ export default function LeaderboardScreen() {
 }
 ---
 c:\Game\app\(tabs)\profile.tsx
-// app/(tabs)/profile.tsx
-import { View, Text } from 'react-native';
-import { useState, useEffect } from 'react';
-import { getCurrentUser } from '../lib/appwrite';
+import { useEffect, useState } from 'react';
+import { Text, View } from 'react-native';
+import { getCurrentUser } from '../lib/getUser'; // <-- fixed line!
 import { User } from '../lib/types';
 
 export default function ProfileScreen() {
@@ -677,16 +1017,14 @@ export default function ProfileScreen() {
     </View>
   );
 }
+
 ---
 c:\Game\app\(tabs)\wallet.tsx
-// app/(tabs)/games.tsx
-import { View, Text, FlatList, Button } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
-import { databases } from '../lib/appwrite';
+import { useEffect, useState } from 'react';
+import { Button, FlatList, Text, View } from 'react-native';
+import { supabase } from '../lib/supabase'; // Use Supabase!
 import { GameRoom } from '../lib/types';
-import { Query } from 'react-native-appwrite';
-
 
 export default function GamesScreen() {
   const [rooms, setRooms] = useState<GameRoom[]>([]);
@@ -695,12 +1033,12 @@ export default function GamesScreen() {
   useEffect(() => {
     const fetchRooms = async () => {
       try {
-        const response = await databases.listDocuments(
-          process.env.APPWRITE_DATABASE_ID!,
-          process.env.APPWRITE_ROOMS_COLLECTION!,
-          [Query.equal('status', 'waiting')]
-        );
-        setRooms((response.documents as unknown) as GameRoom[]);
+        const { data, error } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('status', 'waiting');
+        if (error) throw error;
+        setRooms(data as GameRoom[]);
       } catch (error) {
         console.error('Fetch Rooms Error:', error);
       }
@@ -709,7 +1047,7 @@ export default function GamesScreen() {
   }, []);
 
   const joinRoom = (roomId: string) => {
-    router.push(`/game/room/${roomId}`);
+    router.push(`/game/room/${roomId}` as any);
   };
 
   return (
@@ -730,6 +1068,7 @@ export default function GamesScreen() {
     </View>
   );
 }
+
 ---
 c:\Game\app\+not-found.tsx
 // app/+not-found.tsx
@@ -748,12 +1087,18 @@ export default function NotFoundScreen() {
 }
 ---
 c:\Game\app\constants\fees.ts
+// app/constants/fees.ts
 export const ENTRY_FEES = {
+  micro: 2,
   beginner: 5,
   amateur: 10,
   pro: 25,
   expert: 50,
   master: 100,
+  elite: 250,
+  legend: 500,
+  champion: 1000,
+  ultimate: 5000,
 } as const;
 
 export const COMMISSION_RATE = 0.05; // 5% platform commission
@@ -781,12 +1126,46 @@ export const calculatePrizePool = (
   };
 };
 ---
+c:\Game\app\context\GameContext.tsx
+
+import { createContext, useContext, useState } from 'react';
+import { ENTRY_FEES } from '../constants/fees';
+import { User } from '../lib/types';
+
+interface GameContextType {
+  user: User | null;
+  setUser: (user: User | null) => void;
+  entryFee: keyof typeof ENTRY_FEES | null;
+  setEntryFee: (fee: keyof typeof ENTRY_FEES) => void;
+  playerColor: string | null;
+  setPlayerColor: (color: string) => void;
+}
+
+const GameContext = createContext<GameContextType | undefined>(undefined);
+
+export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [entryFee, setEntryFee] = useState<keyof typeof ENTRY_FEES | null>(null);
+  const [playerColor, setPlayerColor] = useState<string | null>(null);
+
+  return (
+    <GameContext.Provider value={{ user, setUser, entryFee, setEntryFee, playerColor, setPlayerColor }}>
+      {children}
+    </GameContext.Provider>
+  );
+};
+
+export const useGame = () => {
+  const context = useContext(GameContext);
+  if (!context) throw new Error('useGame must be used within GameProvider');
+  return context;
+};
+---
 c:\Game\app\hooks\useGameState.ts
 // hooks/useGameState.ts
-import { useState, useEffect } from 'react';
-import { databases } from '../lib/appwrite';
-import { useSocketIO } from './useSocketIo';
-import { GameState } from '../lib/types';
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { GameRoom, GameState, Token } from '../lib/types';
 
 interface GameStateHook {
   gameState: GameState | null;
@@ -795,49 +1174,150 @@ interface GameStateHook {
   moveToken: (tokenIndex: number, newPosition: number) => Promise<void>;
 }
 
+const DEFAULT_GAMESTATE: GameState = {
+  $id: '',
+  roomId: '',
+  currentPlayer: 1,
+  diceValue: 1,
+  moveCounts: { player1: 0, player2: 0, player3: 0, player4: 0 },
+  room: {} as GameRoom,
+  players: [],
+  gameBoard: {
+    player1: { tokens: [] },
+    player2: { tokens: [] },
+    player3: { tokens: [] },
+    player4: { tokens: [] },
+  },
+  gameHistory: [],
+  startedAt: '',
+  updatedAt: '',
+};
+
 export const useGameState = (roomId: string): GameStateHook => {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { socket } = useSocketIO();
 
   useEffect(() => {
-    if (socket) {
-      socket.emit('joinRoom', roomId);
-      socket.on('updateGameState', (state: GameState) => {
-        setGameState(state);
-        setIsLoading(false);
-      });
-    }
+    let isMounted = true;
+
+    const fetchGameState = async () => {
+      try {
+        // Fetch game state row
+        const { data: gameStateDoc, error: gameStateError } = await supabase
+          .from('game_states')
+          .select('*')
+          .eq('roomId', roomId)
+          .single();
+        if (gameStateError) throw gameStateError;
+
+        // Fetch room data
+        const { data: roomDoc, error: roomError } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('$id', roomId)
+          .single();
+        if (roomError) throw roomError;
+
+        if (isMounted && gameStateDoc && roomDoc) {
+          const room = { ...roomDoc, $id: roomDoc.$id ?? roomDoc.id };
+
+          const fullGameState: GameState = {
+            ...DEFAULT_GAMESTATE,
+            ...gameStateDoc,
+            room,
+            players: room.players,
+            $id: gameStateDoc.$id ?? roomDoc.$id ?? roomDoc.id ?? '',
+            roomId: gameStateDoc.roomId ?? roomId,
+            moveCounts: gameStateDoc.moveCounts ?? { player1: 0, player2: 0, player3: 0, player4: 0 },
+            gameBoard: gameStateDoc.gameBoard ?? DEFAULT_GAMESTATE.gameBoard,
+            gameHistory: gameStateDoc.gameHistory ?? [],
+            startedAt: gameStateDoc.startedAt ?? '',
+            updatedAt: gameStateDoc.updatedAt ?? '',
+            currentPlayer: gameStateDoc.currentPlayer ?? 1,
+            diceValue: gameStateDoc.diceValue ?? 1,
+          };
+          setGameState(fullGameState);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('Fetch Game State Error:', error);
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    fetchGameState();
+
+    // Real-time updates
+    const channel = supabase
+      .channel(`game_state:${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'game_states', filter: `roomId=eq.${roomId}` },
+        async (payload) => {
+          if (!payload?.new) return;
+
+          // Optionally fetch latest room state for player updates
+          const { data: roomDoc, error: roomError } = await supabase
+            .from('rooms')
+            .select('*')
+            .eq('$id', roomId)
+            .single();
+          if (roomError || !roomDoc) return;
+          const room = { ...roomDoc, $id: roomDoc.$id ?? roomDoc.id };
+
+          // Set full game state (type safe)
+          if (isMounted) {
+            const updateState = payload.new;
+            const fullGameState: GameState = {
+              ...DEFAULT_GAMESTATE,
+              ...updateState,
+              room,
+              players: room.players,
+              $id: updateState.$id ?? roomDoc.$id ?? roomDoc.id ?? '',
+              roomId: updateState.roomId ?? roomId,
+              moveCounts: updateState.moveCounts ?? { player1: 0, player2: 0, player3: 0, player4: 0 },
+              gameBoard: updateState.gameBoard ?? DEFAULT_GAMESTATE.gameBoard,
+              gameHistory: updateState.gameHistory ?? [],
+              startedAt: updateState.startedAt ?? '',
+              updatedAt: updateState.updatedAt ?? '',
+              currentPlayer: updateState.currentPlayer ?? 1,
+              diceValue: updateState.diceValue ?? 1,
+            };
+            setGameState(fullGameState);
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      if (socket) socket.off('updateGameState');
+      isMounted = false;
+      supabase.removeChannel(channel);
     };
-  }, [socket, roomId]);
+  }, [roomId]);
+
+  // ----------- ACTIONS -----------
 
   const rollDice = async () => {
+    if (!gameState) throw new Error('Game state not loaded');
     try {
       const diceValue = Math.floor(Math.random() * 6) + 1;
-      if (socket) {
-        socket.emit('rollDice', roomId, diceValue);
-      }
-      await databases.updateDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_GAME_STATES_COLLECTION!,
-        roomId,
-        {
+
+      const { error } = await supabase
+        .from('game_states')
+        .update({
           diceValue,
-          currentPlayer: getNextPlayer(gameState?.currentPlayer),
+          currentPlayer: getNextPlayer(gameState.currentPlayer),
           gameHistory: [
-            ...(gameState?.gameHistory || []),
+            ...(gameState.gameHistory || []),
             {
-              player: gameState?.currentPlayer || 1,
+              player: gameState.currentPlayer,
               action: 'roll',
               dice: diceValue,
               timestamp: new Date().toISOString(),
             },
           ],
-        }
-      );
+        })
+        .eq('roomId', roomId);
+      if (error) throw error;
     } catch (error) {
       console.error('Roll Dice Error:', error);
       throw error;
@@ -845,9 +1325,8 @@ export const useGameState = (roomId: string): GameStateHook => {
   };
 
   const moveToken = async (tokenIndex: number, newPosition: number) => {
+    if (!gameState) throw new Error('Game state not available');
     try {
-      if (!gameState || !socket) return;
-
       const playerKey = `player${gameState.currentPlayer}` as keyof GameState['gameBoard'];
       const updatedBoard = { ...gameState.gameBoard };
       const token = updatedBoard[playerKey].tokens[tokenIndex];
@@ -856,13 +1335,19 @@ export const useGameState = (roomId: string): GameStateHook => {
         throw new Error('Invalid move');
       }
 
+      const moveCount = gameState.moveCounts[playerKey] || 0;
+      const moveLimit = gameState.room?.gameSettings.moveLimit || 10;
+      if (moveCount >= moveLimit) throw new Error('Move limit reached');
+
       updatedBoard[playerKey].tokens[tokenIndex] = {
         ...token,
         position: newPosition,
         isHome: newPosition === 0,
         isSafe: isSafePosition(newPosition),
+        color: token.color,
       };
 
+      // Check and reset captured token if needed
       const capture = checkCapture(newPosition, gameState);
       if (capture) {
         const opponentKey = `player${capture.player}` as keyof GameState['gameBoard'];
@@ -874,12 +1359,14 @@ export const useGameState = (roomId: string): GameStateHook => {
         };
       }
 
-      await databases.updateDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_GAME_STATES_COLLECTION!,
-        roomId,
-        {
+      const { error } = await supabase
+        .from('game_states')
+        .update({
           gameBoard: updatedBoard,
+          moveCounts: {
+            ...gameState.moveCounts,
+            [playerKey]: moveCount + 1,
+          },
           gameHistory: [
             ...gameState.gameHistory,
             {
@@ -891,19 +1378,22 @@ export const useGameState = (roomId: string): GameStateHook => {
               timestamp: new Date().toISOString(),
             },
           ],
-        }
-      );
+        })
+        .eq('roomId', roomId);
+      if (error) throw error;
 
+      // Win check and update room if needed
       if (checkWin(updatedBoard[playerKey].tokens)) {
-        await databases.updateDocument(
-          process.env.APPWRITE_DATABASE_ID!,
-          process.env.APPWRITE_ROOMS_COLLECTION!,
-          roomId,
-          { status: 'completed', winner: gameState.players.find((p) => p.playerNumber === gameState.currentPlayer)?.userId }
-        );
+        const winnerId = gameState.players.find((p) => p.playerNumber === gameState.currentPlayer)?.userId;
+        const { error: roomError } = await supabase
+          .from('rooms')
+          .update({
+            status: 'completed',
+            winner: winnerId,
+          })
+          .eq('$id', gameState.room.$id);
+        if (roomError) throw roomError;
       }
-
-      socket.emit('moveToken', roomId, { tokenIndex, newPosition });
     } catch (error) {
       console.error('Move Token Error:', error);
       throw error;
@@ -913,12 +1403,13 @@ export const useGameState = (roomId: string): GameStateHook => {
   return { gameState, rollDice, moveToken, isLoading };
 };
 
-// Helper functions
+// --- Helper functions (unchanged) ---
+
 const getNextPlayer = (currentPlayer?: number): number => {
   return currentPlayer ? (currentPlayer % 4) + 1 : 1;
 };
 
-const isValidMove = (token: GameState['gameBoard']['player1']['tokens'][0], newPosition: number, gameState: GameState, diceValue: number): boolean => {
+const isValidMove = (token: Token, newPosition: number, gameState: GameState, diceValue: number): boolean => {
   if (token.isHome && diceValue !== 6) return false;
   const currentPosition = token.position;
   const moveDistance = newPosition - currentPosition;
@@ -941,9 +1432,8 @@ const checkCapture = (newPosition: number, gameState: GameState): { player: numb
   return null;
 };
 
-const checkWin = (tokens: GameState['gameBoard']['player1']['tokens']): boolean => {
-  return tokens.every((t) => t.position === 56);
-};
+const checkWin = (tokens: Token[]): boolean => tokens.every((t) => t.position === 56);
+
 ---
 c:\Game\app\hooks\useRealTimeGame.ts
 
@@ -952,7 +1442,6 @@ c:\Game\app\hooks\useSocketIo.ts
 // hooks/useSocketIO.ts
 import { useState, useEffect } from 'react';
 import io, { Socket } from 'socket.io-client';
-import { GameState } from '../lib/types';
 
 interface SocketHook {
   socket: Socket | null;
@@ -992,33 +1481,29 @@ export const useSocketIO = (): SocketHook => {
   return { socket, connect };
 };
 ---
-c:\Game\app\lib\appwrite.ts
+c:\Game\app\lib\auth.ts
+import { supabase } from './supabaseClient';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import { Account, Client, Databases } from 'react-native-appwrite';
 
-const client = new Client()
-  .setEndpoint('YOUR_APPWRITE_ENDPOINT')
-  .setProject('YOUR_APPWRITE_PROJECT_ID');
+// Make sure to call this *once* at the root of your app
+WebBrowser.maybeCompleteAuthSession();
 
-export const account = new Account(client);
-export const databases = new Databases(client);
-
-export const loginWithGoogle = async (): Promise<{ type: string; url?: string }> => {
+export async function loginWithGoogle(): Promise<{ type: string }> {
   try {
     const redirectUrl = Linking.createURL('/auth/callback');
-    const authUrl = client.config.endpoint +
-      '/v1/account/sessions/oauth2/google' +
-      `?project=${client.config.project}` +
-      `&success=${encodeURIComponent(redirectUrl)}` +
-      `&failure=${encodeURIComponent(redirectUrl)}`;
-
-    const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl, {
-      showInRecents: true,
+    // See: https://supabase.com/docs/guides/auth/auth-expo
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: redirectUrl },
     });
+    if (error) throw error;
 
-    // There is not always a need to call handleRedirect for Appwrite.
-    if (result.type === 'success') {
+    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
+    // If user completed sign in in browser and returned via deep link:
+    if (result.type === 'success' || result.type === 'opened') {
+      // Supabase automatically handles session with AsyncStorage after redirect
       return { type: 'success' };
     } else if (result.type === 'cancel') {
       return { type: 'cancel' };
@@ -1028,29 +1513,70 @@ export const loginWithGoogle = async (): Promise<{ type: string; url?: string }>
     return { type: 'unknown' };
   } catch (error) {
     console.error('Google Auth Error:', error);
-    throw error;
+    return { type: 'error' };
   }
+}
+
+---
+c:\Game\app\lib\getUser.ts
+import { supabase } from './supabase';
+import type { User } from './types';
+
+// Caution: Adjust 'id' below if your `users` table uses `$id`
+export const getCurrentUser = async (): Promise<User> => {
+  // 1. Get Supabase auth user (the logged in user)
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) throw error ?? new Error('No user found');
+
+  // 2. Fetch app's user profile from 'users' table (must match your fields)
+  const { data, error: profileErr } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', user.id) // or .eq('$id', user.id) if your primary key is $id
+    .single();
+
+  if (profileErr || !data) throw profileErr ?? new Error('User profile missing');
+
+  // 3. Map DB fields to your User type
+  return {
+    $id: data.id,              // If your column is called 'id'
+    email: data.email,
+    name: data.name,
+    phone: data.phone,
+    googleId: data.googleId,
+    avatar: data.avatar,
+    wallet: data.wallet,
+    stats: data.stats,
+    kyc: data.kyc,
+    isActive: data.isActive,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt
+  };
 };
 
-export const getCurrentUser = async (): Promise<any> => {
-  try {
-    const user = await account.get();
-    // Adjust the following based on your schema:
-    const userDoc = await databases.getDocument(
-      'YOUR_DATABASE_ID',
-      'YOUR_USERS_COLLECTION',
-      user.$id
-    );
-    return userDoc;
-  } catch (error) {
-    console.error('Get User Error:', error);
-    throw error;
-  }
-};
+---
+c:\Game\app\lib\supabase.ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createClient } from '@supabase/supabase-js';
+
+// ❗️Replace with your actual Supabase project credentials:
+const supabaseUrl = 'https://YOURPROJECT.supabase.co';
+const supabaseAnonKey = 'YOUR_SUPABASE_ANON_KEY';
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+});                                                                                 
 
 ---
 c:\Game\app\lib\types.ts
 // lib/types.ts
+
+// USER
 export interface User {
   $id: string;
   email: string;
@@ -1079,6 +1605,19 @@ export interface User {
   updatedAt: string;
 }
 
+// GAME KEYS & COLORS
+export type PlayerKey = 'player1' | 'player2' | 'player3' | 'player4';
+export type Color = 'red' | 'green' | 'yellow' | 'blue';
+
+// GENERIC TOKEN FOR ALL PLAYERS
+export type Token = {
+  position: number;
+  isHome: boolean;
+  isSafe: boolean;
+  color: Color;
+};
+
+// GAME ROOM
 export interface GameRoom {
   $id: string;
   roomCode: string;
@@ -1101,31 +1640,23 @@ export interface GameRoom {
     timeLimit: number;
     autoPlay: boolean;
     botsEnabled: boolean;
+    moveLimit: number;
   };
   createdBy: string;
   createdAt: string;
   updatedAt: string;
 }
 
-
-export type Token = {
-  position: number;
-  isHome: boolean;
-  isSafe: boolean;
-  color: 'red' | 'green' | 'yellow' | 'blue';
-};
-
+// GAME STATE (CORRECTED)
 export interface GameState {
   $id: string;
   roomId: string;
   currentPlayer: number; // 1=Red, 2=Green, 3=Yellow, 4=Blue
   diceValue: number;
-  gameBoard: {
-    player1: { tokens: Array<{ position: number; isHome: boolean; isSafe: boolean; color: 'red' }> };
-    player2: { tokens: Array<{ position: number; isHome: boolean; isSafe: boolean; color: 'green' }> };
-    player3: { tokens: Array<{ position: number; isHome: boolean; isSafe: boolean; color: 'yellow' }> };
-    player4: { tokens: Array<{ position: number; isHome: boolean; isSafe: boolean; color: 'blue' }> };
-  };
+  moveCounts: Record<PlayerKey, number>;
+  room: GameRoom;
+  players: GameRoom['players'];
+  gameBoard: Record<PlayerKey, { tokens: Token[] }>;
   gameHistory: Array<{
     player: number;
     action: 'move' | 'roll' | 'capture';
@@ -1139,6 +1670,7 @@ export interface GameState {
   updatedAt: string;
 }
 
+// TRANSACTION
 export interface Transaction {
   $id: string;
   userId: string;
@@ -1158,6 +1690,7 @@ export interface Transaction {
   updatedAt: string;
 }
 
+// LEADERBOARD
 export interface LeaderboardEntry {
   $id: string;
   userId: string;
@@ -1171,101 +1704,650 @@ export interface LeaderboardEntry {
   updatedAt: string;
 }
 
+// MOVE (for bots or analysis)
 export interface Move {
   tokenIndex: number;
   newPosition: number;
   priority: number;
 }
+
 ---
 c:\Game\app\server\index.ts
-// server/index.ts
-import express from 'express';
-import { Server } from 'socket.io';
-import http from 'http';
-import { databases } from '../lib/appwrite'; // Adjust path based on your setup
+// // server/index.ts
+
+// import { Client, Databases } from 'react-native-appwrite';
+// import express, { Request, Response } from 'express';
+// import { createServer } from 'http';
+// import { Server, Socket } from 'socket.io';
+
+// // --- ENVIRONMENT ---
+// const ENDPOINT = process.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1';
+// const PROJECT_ID = process.env.APPWRITE_PROJECT_ID || '';
+// const API_KEY = process.env.APPWRITE_API_KEY || '';
+// const DB_ID = process.env.APPWRITE_DATABASE_ID || '';
+// const ROOMS_COLLECTION = process.env.APPWRITE_ROOMS_COLLECTION || '';
+// const GAME_STATES_COLLECTION = process.env.APPWRITE_GAME_STATES_COLLECTION || '';
+
+// // --- APPWRITE CLIENT SETUP ---
+// const appwrite = new Client()
+//   .setEndpoint(ENDPOINT)
+//   .setProject(PROJECT_ID);
+// // API keys with Appwrite SDK v10+ should be set via headers on each request/repository!
+// const databases = new Databases(appwrite);
+
+// // --- EXPRESS & SOCKET.IO SETUP ---
+// const app = express();
+// const httpServer = createServer(app);
+// const io = new Server(httpServer, {
+//   cors: {
+//     origin: '*', // Restrict to actual client(s) for production!
+//     methods: ['GET', 'POST'],
+//   },
+// });
+
+// // --- TYPES ---
+// type PlayerKey = 'player1' | 'player2' | 'player3' | 'player4';
+// type Color = 'red' | 'green' | 'yellow' | 'blue';
+
+// interface Player {
+//   userId: string;
+//   playerNumber: number;
+//   joinedAt: string;
+//   isReady: boolean;
+//   isBot: boolean;
+// }
+// interface Token {
+//   position: number;
+//   isHome: boolean;
+//   isSafe: boolean;
+//   color: Color;
+// }
+// interface GameRoom {
+//   $id: string;
+//   roomCode: string;
+//   entryFee: number;
+//   maxPlayers: number;
+//   currentPlayers: number;
+//   gameType: 'classic' | 'quick' | 'tournament';
+//   status: 'waiting' | 'playing' | 'completed' | 'cancelled';
+//   prizePool: number;
+//   commission: number;
+//   winner?: string;
+//   players: Player[];
+//   gameSettings: {
+//     timeLimit: number;
+//     autoPlay: boolean;
+//     botsEnabled: boolean;
+//     moveLimit: number;
+//   };
+//   createdBy: string;
+//   createdAt: string;
+//   updatedAt: string;
+// }
+
+// type GameHistoryEvent = {
+//   player: number;
+//   action: 'move' | 'roll' | 'capture';
+//   dice?: number;
+//   tokenIndex?: number;
+//   from?: number;
+//   to?: number;
+//   timestamp: string;
+// };
+
+// interface GameState {
+//   $id: string;
+//   roomId: string;
+//   currentPlayer: number;
+//   diceValue: number;
+//   moveCounts: Record<PlayerKey, number>;
+//   room: GameRoom;
+//   players: Player[];
+//   gameBoard: Record<PlayerKey, { tokens: Token[] }>;
+//   gameHistory: GameHistoryEvent[];
+//   startedAt: string;
+//   updatedAt: string;
+// }
+
+// // --- DOC MAPPERS ---
+// function mapToGameRoom(doc: any): GameRoom {
+//   return {
+//     $id: doc.$id,
+//     roomCode: doc.roomCode,
+//     entryFee: doc.entryFee,
+//     maxPlayers: doc.maxPlayers,
+//     currentPlayers: doc.currentPlayers,
+//     gameType: doc.gameType,
+//     status: doc.status,
+//     prizePool: doc.prizePool,
+//     commission: doc.commission,
+//     winner: doc.winner,
+//     players: doc.players ?? [],
+//     gameSettings: doc.gameSettings,
+//     createdBy: doc.createdBy,
+//     createdAt: doc.createdAt,
+//     updatedAt: doc.updatedAt,
+//   };
+// }
+// function mapToGameState(doc: any, room: GameRoom): GameState {
+//   return {
+//     $id: doc.$id,
+//     roomId: doc.roomId,
+//     currentPlayer: doc.currentPlayer,
+//     diceValue: doc.diceValue,
+//     moveCounts: doc.moveCounts,
+//     gameBoard: doc.gameBoard,
+//     gameHistory: (doc.gameHistory ?? []).map(mapToGameHistoryEvent),
+//     startedAt: doc.startedAt,
+//     updatedAt: doc.updatedAt,
+//     room,
+//     players: room.players,
+//   };
+// }
+// function mapToGameHistoryEvent(e: any): GameHistoryEvent {
+//   // restrict action only to allowed values, fallback to 'move'
+//   let action: GameHistoryEvent["action"];
+//   if (e.action === 'move' || e.action === 'roll' || e.action === 'capture') action = e.action;
+//   else action = 'move';
+//   return {
+//     player: e.player,
+//     action,
+//     dice: e.dice,
+//     tokenIndex: e.tokenIndex,
+//     from: e.from,
+//     to: e.to,
+//     timestamp: e.timestamp,
+//   };
+// }
+
+// // --- HELPERS ---
+// const getNextPlayer = (currentPlayer: number): number => (currentPlayer % 4) + 1;
+// const isValidMove = (token: Token, newPosition: number, gameState: GameState, diceValue: number): boolean => {
+//   if (token.isHome && diceValue !== 6) return false;
+//   const currentPosition = token.position;
+//   const moveDistance = newPosition - currentPosition;
+//   return moveDistance === diceValue && newPosition >= 0 && newPosition <= 56;
+// };
+// const isSafePosition = (position: number): boolean =>
+//   [0, 1, 9, 14, 22, 27, 35, 40, 48].includes(position);
+
+// const checkCapture = (newPosition: number, gameState: GameState): { player: number; tokenIndex: number } | null => {
+//   const players = [1, 2, 3, 4].filter((p) => p !== gameState.currentPlayer);
+//   for (const player of players) {
+//     const playerKey = `player${player}` as PlayerKey;
+//     const tokens = gameState.gameBoard[playerKey].tokens;
+//     const captured = tokens.findIndex((t) => t.position === newPosition && !t.isSafe);
+//     if (captured !== -1) return { player, tokenIndex: captured };
+//   }
+//   return null;
+// };
+// const checkWin = (tokens: Token[]): boolean => tokens.every((t) => t.position === 56);
+
+// // --- SOCKET.IO EVENTS ---
+// io.on('connection', (socket: Socket) => {
+//   console.log(`Client connected: ${socket.id}`);
+
+//   socket.on('joinRoom', async (roomId: string) => {
+//     try {
+//       const rawRoom = await databases.getDocument(DB_ID, ROOMS_COLLECTION, roomId);
+//       const rawGameState = await databases.getDocument(DB_ID, GAME_STATES_COLLECTION, roomId);
+//       if (!rawRoom || !rawGameState) {
+//         socket.emit('error', { message: 'Room or game state not found' });
+//         return;
+//       }
+//       const room = mapToGameRoom(rawRoom);
+//       const gameState = mapToGameState(rawGameState, room);
+
+//       socket.join(roomId);
+//       io.to(roomId).emit('updateGameState', gameState);
+
+//       // Start game if room is full
+//       if (room.currentPlayers >= room.maxPlayers && room.status === 'waiting') {
+//         await databases.updateDocument(DB_ID, ROOMS_COLLECTION, roomId, { status: 'playing' });
+//         io.to(roomId).emit('roomFull', { roomId });
+//       }
+//     } catch (error) {
+//       console.error('Join Room Error:', error);
+//       socket.emit('error', { message: 'Failed to join room' });
+//     }
+//   });
+
+//   socket.on('rollDice', async (roomId: string, diceValue: number) => {
+//     try {
+//       const rawGameState = await databases.getDocument(DB_ID, GAME_STATES_COLLECTION, roomId);
+//       const rawRoom = await databases.getDocument(DB_ID, ROOMS_COLLECTION, roomId);
+//       if (!rawRoom || !rawGameState) {
+//         socket.emit('error', { message: 'Room or game state not found' });
+//         return;
+//       }
+//       const room = mapToGameRoom(rawRoom);
+//       const gameState = mapToGameState(rawGameState, room);
+
+//       const nextPlayer = getNextPlayer(gameState.currentPlayer);
+//       const newGameHistory: GameHistoryEvent[] = [
+//         ...gameState.gameHistory,
+//         {
+//           player: gameState.currentPlayer,
+//           action: 'roll',
+//           dice: diceValue,
+//           timestamp: new Date().toISOString(),
+//         },
+//       ];
+
+//       await databases.updateDocument(DB_ID, GAME_STATES_COLLECTION, roomId, {
+//         diceValue,
+//         currentPlayer: nextPlayer,
+//         gameHistory: newGameHistory,
+//       });
+
+//       const updatedGameState: GameState = {
+//         ...gameState,
+//         diceValue,
+//         currentPlayer: nextPlayer,
+//         gameHistory: newGameHistory,
+//       };
+//       io.to(roomId).emit('updateGameState', updatedGameState);
+//     } catch (error) {
+//       console.error('Roll Dice Error:', error);
+//       socket.emit('error', { message: 'Failed to roll dice' });
+//     }
+//   });
+
+//   socket.on('moveToken', async (roomId: string, data: { tokenIndex: number; newPosition: number }) => {
+//     try {
+//       const { tokenIndex, newPosition } = data;
+//       const rawGameState = await databases.getDocument(DB_ID, GAME_STATES_COLLECTION, roomId);
+//       const rawRoom = await databases.getDocument(DB_ID, ROOMS_COLLECTION, roomId);
+//       if (!rawRoom || !rawGameState) {
+//         socket.emit('error', { message: 'Room or game state not found' });
+//         return;
+//       }
+//       const room = mapToGameRoom(rawRoom);
+//       const gameState = mapToGameState(rawGameState, room);
+
+//       const playerKey = `player${gameState.currentPlayer}` as PlayerKey;
+//       const updatedBoard = { ...gameState.gameBoard };
+//       const token = updatedBoard[playerKey].tokens[tokenIndex];
+
+//       if (!isValidMove(token, newPosition, gameState, gameState.diceValue)) {
+//         socket.emit('error', { message: 'Invalid move' });
+//         return;
+//       }
+//       const moveCount = gameState.moveCounts[playerKey] || 0;
+//       const moveLimit = room.gameSettings.moveLimit || 10;
+//       if (moveCount >= moveLimit) {
+//         socket.emit('error', { message: 'Move limit reached' });
+//         return;
+//       }
+
+//       updatedBoard[playerKey].tokens[tokenIndex] = {
+//         ...token,
+//         position: newPosition,
+//         isHome: newPosition === 0,
+//         isSafe: isSafePosition(newPosition),
+//       };
+
+//       const capture = checkCapture(newPosition, gameState);
+//       if (capture) {
+//         const opponentKey = `player${capture.player}` as PlayerKey;
+//         updatedBoard[opponentKey].tokens[capture.tokenIndex] = {
+//           position: 0,
+//           isHome: true,
+//           isSafe: false,
+//           color: updatedBoard[opponentKey].tokens[capture.tokenIndex].color,
+//         };
+//       }
+
+//       const newMoveCounts: Record<PlayerKey, number> = {
+//         ...gameState.moveCounts,
+//         [playerKey]: moveCount + 1,
+//       };
+//       const newGameHistory: GameHistoryEvent[] = [
+//         ...gameState.gameHistory,
+//         {
+//           player: gameState.currentPlayer,
+//           action: 'move',
+//           tokenIndex,
+//           from: token.position,
+//           to: newPosition,
+//           timestamp: new Date().toISOString(),
+//         },
+//       ];
+
+//       await databases.updateDocument(DB_ID, GAME_STATES_COLLECTION, roomId, {
+//         gameBoard: updatedBoard,
+//         moveCounts: newMoveCounts,
+//         gameHistory: newGameHistory,
+//       });
+
+//       const updatedGameState: GameState = {
+//         ...gameState,
+//         gameBoard: updatedBoard,
+//         moveCounts: newMoveCounts,
+//         gameHistory: newGameHistory,
+//       };
+
+//       if (checkWin(updatedBoard[playerKey].tokens)) {
+//         await databases.updateDocument(DB_ID, ROOMS_COLLECTION, roomId, {
+//           status: 'completed',
+//           winner: gameState.players.find((p) => p.playerNumber === gameState.currentPlayer)?.userId,
+//         });
+//         io.to(roomId).emit('gameOver', {
+//           winner: gameState.players.find((p) => p.playerNumber === gameState.currentPlayer)?.userId,
+//         });
+//       }
+
+//       io.to(roomId).emit('updateGameState', updatedGameState);
+//     } catch (error: any) {
+//       console.error('Move Token Error:', error);
+//       socket.emit('error', { message: error?.message || 'Move failed' });
+//     }
+//   });
+
+//   socket.on('disconnect', () => {
+//     console.log(`Client disconnected: ${socket.id}`);
+//   });
+// });
+
+// // --- EXPRESS ROUTE (type safe) ---
+// app.get('/health', (_: Request, res: Response) => {
+//   res.status(200).json({ status: 'Server is running' });
+// });
+
+// // --- START SERVER ---
+// const PORT = process.env.PORT || 3000;
+// httpServer.listen(PORT, () => {
+//   console.log(`Server is running on port ${PORT}`);
+// });
+
+
+import { createClient } from '@supabase/supabase-js';
+import express, { Request, Response } from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io'; // Kept for compatibility, but could be removed if fully using Supabase channels
+
+const SUPABASE_URL = process.env.SUPABASE_URL || 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY';
+const DB_ID = process.env.SUPABASE_DATABASE_ID || 'public';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
   cors: {
-    origin: '*', // Adjust for production
+    origin: '*',
+    methods: ['GET', 'POST'],
   },
 });
 
-io.on('connection', (socket) => {
-  console.log('Player connected:', socket.id);
+type PlayerKey = 'player1' | 'player2' | 'player3' | 'player4';
+type Color = 'red' | 'green' | 'yellow' | 'blue';
 
-  socket.on('joinRoom', async (roomId: string, userId: string) => {
-    const room = await databases.getDocument(
-      process.env.APPWRITE_DATABASE_ID!,
-      process.env.APPWRITE_ROOMS_COLLECTION!,
-      roomId
-    );
-    if (!room.players.find((p: any) => p.userId === userId)) {
-      const newPlayers = [
-        ...room.players,
-        {
-          userId,
-          playerNumber: room.currentPlayers + 1,
-          joinedAt: new Date().toISOString(),
-          isReady: false,
-          isBot: false,
-        },
-      ];
-      await databases.updateDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_ROOMS_COLLECTION!,
-        roomId,
-        {
-          currentPlayers: room.currentPlayers + 1,
-          players: newPlayers,
-        }
-      );
+interface Player {
+  userId: string;
+  playerNumber: number;
+  joinedAt: string;
+  isReady: boolean;
+  isBot: boolean;
+}
+
+interface Token {
+  position: number;
+  isHome: boolean;
+  isSafe: boolean;
+  color: Color;
+}
+
+interface GameRoom {
+  id: string;
+  roomCode: string;
+  entryFee: number;
+  maxPlayers: number;
+  currentPlayers: number;
+  gameType: 'classic' | 'quick' | 'tournament';
+  status: 'waiting' | 'playing' | 'completed' | 'cancelled';
+  prizePool: number;
+  commission: number;
+  winner?: string;
+  players: Player[];
+  gameSettings: {
+    timeLimit: number;
+    autoPlay: boolean;
+    botsEnabled: boolean;
+    moveLimit: number;
+  };
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface GameHistoryEvent {
+  player: number;
+  action: 'move' | 'roll' | 'capture';
+  dice?: number;
+  tokenIndex?: number;
+  from?: number;
+  to?: number;
+  timestamp: string;
+}
+
+interface GameState {
+  id: string;
+  roomId: string;
+  currentPlayer: number;
+  diceValue: number;
+  moveCounts: Record<PlayerKey, number>;
+  room: GameRoom;
+  players: Player[];
+  gameBoard: Record<PlayerKey, { tokens: Token[] }>;
+  gameHistory: GameHistoryEvent[];
+  startedAt: string;
+  updatedAt: string;
+}
+
+function mapToGameRoom(doc: any): GameRoom {
+  return {
+    id: doc.id,
+    roomCode: doc.roomCode,
+    entryFee: doc.entryFee,
+    maxPlayers: doc.maxPlayers,
+    currentPlayers: doc.currentPlayers,
+    gameType: doc.gameType,
+    status: doc.status,
+    prizePool: doc.prizePool,
+    commission: doc.commission,
+    winner: doc.winner,
+    players: doc.players ?? [],
+    gameSettings: doc.gameSettings,
+    createdBy: doc.createdBy,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+
+function mapToGameState(doc: any, room: GameRoom): GameState {
+  return {
+    id: doc.id,
+    roomId: doc.roomId,
+    currentPlayer: doc.currentPlayer,
+    diceValue: doc.diceValue,
+    moveCounts: doc.moveCounts,
+    gameBoard: doc.gameBoard,
+    gameHistory: (doc.gameHistory ?? []).map(mapToGameHistoryEvent),
+    startedAt: doc.startedAt,
+    updatedAt: doc.updatedAt,
+    room,
+    players: room.players,
+  };
+}
+
+function mapToGameHistoryEvent(e: any): GameHistoryEvent {
+  let action: GameHistoryEvent["action"];
+  if (e.action === 'move' || e.action === 'roll' || e.action === 'capture') action = e.action;
+  else action = 'move';
+  return {
+    player: e.player,
+    action,
+    dice: e.dice,
+    tokenIndex: e.tokenIndex,
+    from: e.from,
+    to: e.to,
+    timestamp: e.timestamp,
+  };
+}
+
+const getNextPlayer = (currentPlayer: number): number => (currentPlayer % 4) + 1;
+
+const isValidMove = (token: Token, newPosition: number, gameState: GameState, diceValue: number): boolean => {
+  if (token.isHome && diceValue !== 6) return false;
+  const currentPosition = token.position;
+  const moveDistance = newPosition - currentPosition;
+  return moveDistance === diceValue && newPosition >= 0 && newPosition <= 56;
+};
+
+const isSafePosition = (position: number): boolean =>
+  [0, 1, 9, 14, 22, 27, 35, 40, 48].includes(position);
+
+const checkCapture = (newPosition: number, gameState: GameState): { player: number; tokenIndex: number } | null => {
+  const players = [1, 2, 3, 4].filter((p) => p !== gameState.currentPlayer);
+  for (const player of players) {
+    const playerKey = `player${player}` as PlayerKey;
+    const tokens = gameState.gameBoard[playerKey].tokens;
+    const captured = tokens.findIndex((t) => t.position === newPosition && !t.isSafe);
+    if (captured !== -1) return { player, tokenIndex: captured };
+  }
+  return null;
+};
+
+const checkWin = (tokens: Token[]): boolean => tokens.every((t) => t.position === 56);
+
+io.on('connection', (socket) => {
+  console.log(`Client connected: ${socket.id}`);
+
+  socket.on('joinRoom', async (roomId: string) => {
+    try {
+      const { data: rawRoom, error: roomError } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('id', roomId)
+        .single();
+      const { data: rawGameState, error: gameStateError } = await supabase
+        .from('game_states')
+        .select('*')
+        .eq('roomId', roomId)
+        .single();
+      if (roomError || gameStateError || !rawRoom || !rawGameState) {
+        socket.emit('error', { message: 'Room or game state not found' });
+        return;
+      }
+      const room = mapToGameRoom(rawRoom);
+      const gameState = mapToGameState(rawGameState, room);
+
+      socket.join(roomId);
+      io.to(roomId).emit('updateGameState', gameState);
+
+      if (room.currentPlayers >= room.maxPlayers && room.status === 'waiting') {
+        await supabase
+          .from('rooms')
+          .update({ status: 'playing' })
+          .eq('id', roomId);
+        io.to(roomId).emit('roomFull', { roomId });
+      }
+    } catch (error) {
+      console.error('Join Room Error:', error);
+      socket.emit('error', { message: 'Failed to join room' });
     }
-    socket.join(roomId);
-    io.to(roomId).emit('playerJoined', { userId, playerNumber: room.currentPlayers + 1 });
   });
 
   socket.on('rollDice', async (roomId: string, diceValue: number) => {
-    const gameState = await databases.getDocument(
-      process.env.APPWRITE_DATABASE_ID!,
-      process.env.APPWRITE_GAME_STATES_COLLECTION!,
-      roomId
-    );
-    const nextPlayer = getNextPlayer(gameState.currentPlayer);
-    await databases.updateDocument(
-      process.env.APPWRITE_DATABASE_ID!,
-      process.env.APPWRITE_GAME_STATES_COLLECTION!,
-      roomId,
-      {
+    try {
+      const { data: rawGameState, error: gameStateError } = await supabase
+        .from('game_states')
+        .select('*')
+        .eq('roomId', roomId)
+        .single();
+      const { data: rawRoom, error: roomError } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('id', roomId)
+        .single();
+      if (roomError || gameStateError || !rawRoom || !rawGameState) {
+        socket.emit('error', { message: 'Room or game state not found' });
+        return;
+      }
+      const room = mapToGameRoom(rawRoom);
+      const gameState = mapToGameState(rawGameState, room);
+
+      const nextPlayer = getNextPlayer(gameState.currentPlayer);
+      const newGameHistory: GameHistoryEvent[] = [
+        ...gameState.gameHistory,
+        {
+          player: gameState.currentPlayer,
+          action: 'roll',
+          dice: diceValue,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+
+      const { error } = await supabase
+        .from('game_states')
+        .update({
+          diceValue,
+          currentPlayer: nextPlayer,
+          gameHistory: newGameHistory,
+        })
+        .eq('roomId', roomId);
+      if (error) throw error;
+
+      const updatedGameState: GameState = {
+        ...gameState,
         diceValue,
         currentPlayer: nextPlayer,
-        gameHistory: [
-          ...(gameState.gameHistory || []),
-          {
-            player: gameState.currentPlayer,
-            action: 'roll',
-            dice: diceValue,
-            timestamp: new Date().toISOString(),
-          },
-        ],
-      }
-    );
-    io.to(roomId).emit('diceRolled', { roomId, diceValue });
+        gameHistory: newGameHistory,
+      };
+      io.to(roomId).emit('updateGameState', updatedGameState);
+    } catch (error) {
+      console.error('Roll Dice Error:', error);
+      socket.emit('error', { message: 'Failed to roll dice' });
+    }
   });
 
   socket.on('moveToken', async (roomId: string, data: { tokenIndex: number; newPosition: number }) => {
-    const { tokenIndex, newPosition } = data;
-    const gameState = await databases.getDocument(
-      process.env.APPWRITE_DATABASE_ID!,
-      process.env.APPWRITE_GAME_STATES_COLLECTION!,
-      roomId
-    );
-    const playerKey = `player${gameState.currentPlayer}` as keyof GameState['gameBoard'];
-    const updatedBoard = { ...gameState.gameBoard };
-    const token = updatedBoard[playerKey].tokens[tokenIndex];
+    try {
+      const { tokenIndex, newPosition } = data;
+      const { data: rawGameState, error: gameStateError } = await supabase
+        .from('game_states')
+        .select('*')
+        .eq('roomId', roomId)
+        .single();
+      const { data: rawRoom, error: roomError } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('id', roomId)
+        .single();
+      if (roomError || gameStateError || !rawRoom || !rawGameState) {
+        socket.emit('error', { message: 'Room or game state not found' });
+        return;
+      }
+      const room = mapToGameRoom(rawRoom);
+      const gameState = mapToGameState(rawGameState, room);
 
-    if (newPosition >= 0 && newPosition <= 56 && (!token.isHome || gameState.diceValue === 6)) {
+      const playerKey = `player${gameState.currentPlayer}` as PlayerKey;
+      const updatedBoard = { ...gameState.gameBoard };
+      const token = updatedBoard[playerKey].tokens[tokenIndex];
+
+      if (!isValidMove(token, newPosition, gameState, gameState.diceValue)) {
+        socket.emit('error', { message: 'Invalid move' });
+        return;
+      }
+      const moveCount = gameState.moveCounts[playerKey] || 0;
+      const moveLimit = room.gameSettings.moveLimit || 10;
+      if (moveCount >= moveLimit) {
+        socket.emit('error', { message: 'Move limit reached' });
+        return;
+      }
+
       updatedBoard[playerKey].tokens[tokenIndex] = {
         ...token,
         position: newPosition,
@@ -1273,50 +2355,153 @@ io.on('connection', (socket) => {
         isSafe: isSafePosition(newPosition),
       };
 
-      await databases.updateDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_GAME_STATES_COLLECTION!,
-        roomId,
+      const capture = checkCapture(newPosition, gameState);
+      if (capture) {
+        const opponentKey = `player${capture.player}` as PlayerKey;
+        updatedBoard[opponentKey].tokens[capture.tokenIndex] = {
+          position: 0,
+          isHome: true,
+          isSafe: false,
+          color: updatedBoard[opponentKey].tokens[capture.tokenIndex].color,
+        };
+      }
+
+      const newMoveCounts: Record<PlayerKey, number> = {
+        ...gameState.moveCounts,
+        [playerKey]: moveCount + 1,
+      };
+      const newGameHistory: GameHistoryEvent[] = [
+        ...gameState.gameHistory,
         {
+          player: gameState.currentPlayer,
+          action: 'move',
+          tokenIndex,
+          from: token.position,
+          to: newPosition,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+
+      const { error } = await supabase
+        .from('game_states')
+        .update({
           gameBoard: updatedBoard,
-          gameHistory: [
-            ...gameState.gameHistory,
-            {
-              player: gameState.currentPlayer,
-              action: 'move',
-              tokenIndex,
-              from: token.position,
-              to: newPosition,
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        }
-      );
-      io.to(roomId).emit('tokenMoved', { roomId, tokenIndex, newPosition });
+          moveCounts: newMoveCounts,
+          gameHistory: newGameHistory,
+        })
+        .eq('roomId', roomId);
+      if (error) throw error;
+
+      const updatedGameState: GameState = {
+        ...gameState,
+        gameBoard: updatedBoard,
+        moveCounts: newMoveCounts,
+        gameHistory: newGameHistory,
+      };
+
+      if (checkWin(updatedBoard[playerKey].tokens)) {
+        const { error: roomError } = await supabase
+          .from('rooms')
+          .update({
+            status: 'completed',
+            winner: gameState.players.find((p) => p.playerNumber === gameState.currentPlayer)?.userId,
+          })
+          .eq('id', roomId);
+        if (roomError) throw roomError;
+        io.to(roomId).emit('gameOver', {
+          winner: gameState.players.find((p) => p.playerNumber === gameState.currentPlayer)?.userId,
+        });
+      }
+
+      io.to(roomId).emit('updateGameState', updatedGameState);
+    } catch (error: any) {
+      console.error('Move Token Error:', error);
+      socket.emit('error', { message: error?.message || 'Move failed' });
     }
   });
 
   socket.on('disconnect', () => {
-    console.log('Player disconnected:', socket.id);
+    console.log(`Client disconnected: ${socket.id}`);
   });
 });
 
-const getNextPlayer = (currentPlayer?: number): number => {
-  return currentPlayer ? (currentPlayer % 4) + 1 : 1;
-};
+app.get('/health', (_: Request, res: Response) => {
+  res.status(200).json({ status: 'Server is running' });
+});
 
-const isSafePosition = (position: number): boolean => {
-  const safePositions = [0, 1, 9, 14, 22, 27, 35, 40, 48];
-  return safePositions.includes(position);
-};
-
-server.listen(3000, () => {
-  console.log('Socket.IO server running on port 3000');
+const PORT = process.env.PORT || 3000;
+httpServer.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
 ---
 c:\Game\app\services\botService.ts
-// services/botService.ts
-import { GameState, Move } from '../lib/types';
+// import { GameState, Move, Token } from '../lib/types';
+
+// export class BotService {
+//   static makeMove(gameState: GameState, playerNumber: number): Move | null {
+//     const availableMoves = this.getAvailableMoves(gameState, playerNumber);
+
+//     if (!availableMoves.length) return null;
+
+//     return availableMoves.reduce((best, current) =>
+//       current.priority > best.priority ? current : best
+//     );
+//   }
+
+//   private static getAvailableMoves(gameState: GameState, playerNumber: number): Move[] {
+//     const moves: Move[] = [];
+//     const playerKey = `player${playerNumber}` as keyof GameState['gameBoard'];
+//     const tokens = gameState.gameBoard[playerKey].tokens;
+//     const diceValue = gameState.diceValue;
+
+//     tokens.forEach((token, index) => {
+//       if (this.isValidMove(token, diceValue, gameState)) {
+//         const newPosition = token.position + diceValue;
+//         let priority = 0;
+
+//         if (this.isCaptureMove(newPosition, gameState)) priority += 100;
+//         if (this.isSafePosition(newPosition)) priority += 50;
+//         if (this.isTowardsFinish(newPosition)) priority += 25;
+//         if (token.isHome && diceValue === 6) priority += 10;
+
+//         moves.push({ tokenIndex: index, newPosition, priority });
+//       }
+//     });
+
+//     return moves;
+//   }
+
+//   private static isValidMove(token: Token, diceValue: number, gameState: GameState): boolean {
+//     const newPosition = token.position + diceValue;
+//     return newPosition >= 0 && newPosition <= 56 && (!token.isHome || diceValue === 6);
+//   }
+
+//   private static isCaptureMove(newPosition: number, gameState: GameState): boolean {
+//     return !!this.checkCapture(newPosition, gameState);
+//   }
+
+//   private static isSafePosition(position: number): boolean {
+//     const safePositions = [0, 1, 9, 14, 22, 27, 35, 40, 48];
+//     return safePositions.includes(position);
+//   }
+
+//   private static isTowardsFinish(position: number): boolean {
+//     return position > 50;
+//   }
+
+//   private static checkCapture(newPosition: number, gameState: GameState): { player: number; tokenIndex: number } | null {
+//     const players = [1, 2, 3, 4].filter((p) => p !== gameState.currentPlayer);
+//     for (const player of players) {
+//       const playerKey = `player${player}` as keyof GameState['gameBoard'];
+//       const tokens = gameState.gameBoard[playerKey].tokens;
+//       const captured = tokens.findIndex((t) => t.position === newPosition && !t.isSafe);
+//       if (captured !== -1) return { player, tokenIndex: captured };
+//     }
+//     return null;
+//   }
+// }
+
+import { GameState, Move, Token } from '../lib/types';
 
 export class BotService {
   static makeMove(gameState: GameState, playerNumber: number): Move | null {
@@ -1352,13 +2537,13 @@ export class BotService {
     return moves;
   }
 
-  private static isValidMove(token: GameState['gameBoard']['player1']['tokens'][0], diceValue: number, gameState: GameState): boolean {
+  private static isValidMove(token: Token, diceValue: number, gameState: GameState): boolean {
     const newPosition = token.position + diceValue;
     return newPosition >= 0 && newPosition <= 56 && (!token.isHome || diceValue === 6);
   }
 
   private static isCaptureMove(newPosition: number, gameState: GameState): boolean {
-    return !!checkCapture(newPosition, gameState); // Reuse checkCapture from useGameState
+    return !!this.checkCapture(newPosition, gameState);
   }
 
   private static isSafePosition(position: number): boolean {
@@ -1369,19 +2554,29 @@ export class BotService {
   private static isTowardsFinish(position: number): boolean {
     return position > 50;
   }
+
+  private static checkCapture(newPosition: number, gameState: GameState): { player: number; tokenIndex: number } | null {
+    const players = [1, 2, 3, 4].filter((p) => p !== gameState.currentPlayer);
+    for (const player of players) {
+      const playerKey = `player${player}` as keyof GameState['gameBoard'];
+      const tokens = gameState.gameBoard[playerKey].tokens;
+      const captured = tokens.findIndex((t) => t.position === newPosition && !t.isSafe);
+      if (captured !== -1) return { player, tokenIndex: captured };
+    }
+    return null;
+  }
 }
 ---
 c:\Game\app\services\payment.ts
-// services/payment.ts
-import { Stripe } from '@stripe/stripe-react-native';
-import { databases } from '../lib/appwrite';
+import { initStripe } from '@stripe/stripe-react-native';
+import { supabase } from '../lib/supabase';
 import { Transaction } from '../lib/types';
 
 export const PaymentService = {
   initializeStripe: async () => {
     try {
-      await Stripe.initialize({
-        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY!,
+      await initStripe({
+        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'YOUR_STRIPE_PUBLISHABLE_KEY',
       });
     } catch (error) {
       console.error('Stripe Initialization Error:', error);
@@ -1389,73 +2584,55 @@ export const PaymentService = {
     }
   },
 
-  createPaymentIntent: async (amount: number): Promise<{ clientSecret: string }> => {
+  createPaymentIntent: async (amount: number, currency: string = 'INR'): Promise<{ clientSecret: string }> => {
     try {
-      const response = await fetch('/api/create-payment-intent', {
+      const response = await fetch(`${process.env.SERVER_URL || 'http://localhost:3000'}/api/create-payment-intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, currency: 'INR' }),
+        body: JSON.stringify({ amount, currency }),
       });
-      return response.json();
+      if (!response.ok) {
+        throw new Error('Failed to create payment intent');
+      }
+      return await response.json();
     } catch (error) {
       console.error('Payment Intent Error:', error);
       throw error;
     }
   },
 
-  processPayment: async (userId: string, amount: number, gameRoomId?: string): Promise<Transaction> => {
+  storeTransaction: async (
+    userId: string,
+    amount: number,
+    paymentIntentId: string,
+    gameRoomId?: string
+  ): Promise<Transaction> => {
     try {
-      const { clientSecret } = await PaymentService.createPaymentIntent(amount);
-      const { paymentIntent, error } = await Stripe.confirmPayment(clientSecret, {
-        paymentMethodType: 'Card',
-      });
+      const transaction: Transaction = {
+        $id: '',
+        userId,
+        type: gameRoomId ? 'game_entry' : 'deposit',
+        amount,
+        currency: 'INR',
+        status: 'completed',
+        paymentMethod: 'stripe',
+        stripePaymentId: paymentIntentId,
+        gameRoomId,
+        description: gameRoomId ? `Entry fee for game room ${gameRoomId}` : 'Wallet deposit',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
 
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert(transaction)
+        .select()
+        .single();
       if (error) throw error;
 
-      const transaction = await databases.createDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_TRANSACTIONS_COLLECTION!,
-        'unique()',
-        {
-          userId,
-          type: 'deposit',
-          amount,
-          currency: 'INR',
-          status: 'completed',
-          paymentMethod: 'stripe',
-          stripePaymentId: paymentIntent!.id,
-          gameRoomId,
-          description: 'Deposit to wallet',
-          metadata: {
-            stripeCustomerId: paymentIntent!.customer,
-            paymentMethodId: paymentIntent!.payment_method,
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }
-      );
-
-      const user = await databases.getDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_USERS_COLLECTION!,
-        userId
-      );
-      await databases.updateDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_USERS_COLLECTION!,
-        userId,
-        {
-          wallet: {
-            ...user.wallet,
-            balance: user.wallet.balance + amount,
-            totalDeposits: user.wallet.totalDeposits + amount,
-          },
-        }
-      );
-
-      return (transaction.documents as unknown) as Transaction;
+      return data as Transaction;
     } catch (error) {
-      console.error('Payment Processing Error:', error);
+      console.error('Store Transaction Error:', error);
       throw error;
     }
   },
@@ -1464,8 +2641,9 @@ export const PaymentService = {
 c:\Game\app\_layout.tsx
 // app/_layout.tsx
 import { Stack } from 'expo-router';
-import { PaymentService } from './services/payment';
 import { useEffect } from 'react';
+import { GameProvider } from './context/GameContext';
+import { PaymentService } from './services/payment';
 
 export default function RootLayout() {
   useEffect(() => {
@@ -1473,6 +2651,7 @@ export default function RootLayout() {
   }, []);
 
   return (
+    <GameProvider>
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -1482,6 +2661,9 @@ export default function RootLayout() {
 <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
       <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
     </Stack>
+    </GameProvider>
   );
 }
+
+
 ---

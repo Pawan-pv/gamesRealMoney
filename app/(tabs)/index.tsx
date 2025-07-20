@@ -1,9 +1,7 @@
-// app/(tabs)/index.tsx
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { getCurrentUser } from '../lib/appwrite';
-import { User } from '../lib/types';
+import { getCurrentUser } from '../lib/getUser'; // FIXED: import from lib/getUser
 import { useGame } from '../context/GameContext';
 
 const styles = StyleSheet.create({
@@ -63,7 +61,7 @@ export default function HomeScreen() {
         />
         <Text accessibilityLabel="User name">{user?.name || 'Guest'}</Text>
       </View>
-      <Text style={styles.sectionTitle}>Wallet Balance: ₹{user?.wallet.balance || 0}</Text>
+      <Text style={styles.sectionTitle}>Wallet Balance: ₹{user?.wallet?.balance ?? 0}</Text>
       <Text style={styles.sectionTitle}>Trending Games 🔥</Text>
       <FlatList
         data={trendingGames}

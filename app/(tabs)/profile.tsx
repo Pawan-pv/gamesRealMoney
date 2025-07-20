@@ -1,7 +1,6 @@
-// app/(tabs)/profile.tsx
-import { View, Text } from 'react-native';
-import { useState, useEffect } from 'react';
-import { getCurrentUser } from '../lib/appwrite';
+import { useEffect, useState } from 'react';
+import { Text, View } from 'react-native';
+import { getCurrentUser } from '../lib/getUser'; // <-- fixed line!
 import { User } from '../lib/types';
 
 export default function ProfileScreen() {

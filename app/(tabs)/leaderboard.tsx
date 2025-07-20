@@ -1,10 +1,7 @@
-// app/(tabs)/leaderboard.tsx
 import { useEffect, useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
-import { databases } from '../lib/appwrite';
+import { supabase } from '../lib/supabase';
 import { LeaderboardEntry } from '../lib/types';
-import { Query } from 'react-native-appwrite';
-
 
 export default function LeaderboardScreen() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -12,12 +9,12 @@ export default function LeaderboardScreen() {
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        const response = await databases.listDocuments(
-          process.env.APPWRITE_DATABASE_ID!,
-          process.env.APPWRITE_LEADERBOARD_COLLECTION!,
-          [Query.orderDesc('totalWinnings')]
-        );
-        setLeaderboard((response.documents as unknown) as LeaderboardEntry[]);
+        const { data, error } = await supabase
+          .from('leaderboard')
+          .select('*')
+          .order('totalWinnings', { ascending: false });
+        if (error) throw error;
+        setLeaderboard(data as LeaderboardEntry[]);
       } catch (error) {
         console.error('Fetch Leaderboard Error:', error);
       }

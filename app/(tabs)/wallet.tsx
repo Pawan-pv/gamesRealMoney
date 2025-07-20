@@ -1,11 +1,8 @@
-// app/(tabs)/games.tsx
-import { View, Text, FlatList, Button } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
-import { databases } from '../lib/appwrite';
+import { useEffect, useState } from 'react';
+import { Button, FlatList, Text, View } from 'react-native';
+import { supabase } from '../lib/supabase'; // Use Supabase!
 import { GameRoom } from '../lib/types';
-import { Query } from 'react-native-appwrite';
-
 
 export default function GamesScreen() {
   const [rooms, setRooms] = useState<GameRoom[]>([]);
@@ -14,12 +11,12 @@ export default function GamesScreen() {
   useEffect(() => {
     const fetchRooms = async () => {
       try {
-        const response = await databases.listDocuments(
-          process.env.APPWRITE_DATABASE_ID!,
-          process.env.APPWRITE_ROOMS_COLLECTION!,
-          [Query.equal('status', 'waiting')]
-        );
-        setRooms((response.documents as unknown) as GameRoom[]);
+        const { data, error } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('status', 'waiting');
+        if (error) throw error;
+        setRooms(data as GameRoom[]);
       } catch (error) {
         console.error('Fetch Rooms Error:', error);
       }
@@ -28,7 +25,7 @@ export default function GamesScreen() {
   }, []);
 
   const joinRoom = (roomId: string) => {
-    router.push(`/game/room/${roomId}` as  any);
+    router.push(`/game/room/${roomId}` as any);
   };
 
   return (

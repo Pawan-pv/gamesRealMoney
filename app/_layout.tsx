@@ -1,13 +1,13 @@
 // app/_layout.tsx
 import { Stack } from 'expo-router';
-import { PaymentService } from './services/payment';
-import { useEffect } from 'react';
+// import { useEffect } from 'react';
 import { GameProvider } from './context/GameContext';
+// import { PaymentService } from './services/payment';
 
 export default function RootLayout() {
-  useEffect(() => {
-    PaymentService.initializeStripe();
-  }, []);
+//   useEffect(() => {
+//     PaymentService.initializeStripe();
+//   }, []);
 
   return (
     <GameProvider>
@@ -22,4 +22,5 @@ export default function RootLayout() {
     </Stack>
     </GameProvider>
   );
+
 }
